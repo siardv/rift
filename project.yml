@@ -1,0 +1,52 @@
+# xcodegen project definition — run `xcodegen generate` to (re)create Rift.xcodeproj
+# the generated project is intentionally untracked (see .gitignore)
+name: Rift
+options:
+  bundleIdPrefix: io.github.siardv
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+packages:
+  RiftEngine:
+    path: RiftEngine
+fileGroups:
+  - docs
+targets:
+  Rift:
+    type: application
+    platform: iOS
+    sources:
+      - Rift
+    dependencies:
+      - package: RiftEngine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.siardv.rift
+        PRODUCT_NAME: Rift
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_CFBundleDisplayName: Rift
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
+  RiftTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - RiftTests
+    dependencies:
+      - package: RiftEngine
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+schemes:
+  Rift:
+    build:
+      targets:
+        Rift: all
+    test:
+      targets:
+        - RiftTests

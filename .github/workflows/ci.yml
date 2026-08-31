@@ -1,0 +1,43 @@
+# continuous integration (sdd §10):
+#   macos  — generate the project with xcodegen, then run the app test scheme
+#   ubuntu — swift test on the engine package only, keeping it honestly platform-independent
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macos / xcodegen + xcodebuild test
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: install xcodegen
+        run: brew install xcodegen
+      - name: generate project
+        run: xcodegen generate
+      - name: run tests on ios simulator
+        run: >
+          xcodebuild test
+          -project Rift.xcodeproj
+          -scheme Rift
+          -destination 'platform=iOS Simulator,name=iPhone 16'
+          CODE_SIGNING_ALLOWED=NO
+
+  ubuntu:
+    name: ubuntu / swift test (engine only)
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift version
+        run: swift --version
+      - name: run engine tests
+        working-directory: RiftEngine
+        run: swift test
