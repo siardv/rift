@@ -4,6 +4,10 @@ import PackageDescription
 
 let package = Package(
     name: "RiftEngine",
+    platforms: [
+        .iOS(.v17),
+        .macOS(.v13),
+    ],
     products: [
         .library(name: "RiftEngine", targets: ["RiftEngine"])
     ],

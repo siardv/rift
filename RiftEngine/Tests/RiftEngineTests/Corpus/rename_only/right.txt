@@ -1,0 +1,5 @@
+const maxItems = 10;
+for (const it of items) {
+  push(it);
+}
+flush();

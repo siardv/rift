@@ -1,0 +1,8 @@
+{
+  "profile": "prose",
+  "verdict": "formattingOnly",
+  "convergenceLevel": "L2",
+  "contentChanges": 0,
+  "formattingOnly": 2,
+  "hunkKinds": []
+}

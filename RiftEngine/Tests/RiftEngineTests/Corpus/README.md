@@ -1,6 +1,6 @@
 # Golden corpus
 
-This folder is the engine's executable specification (SDD §10). It contains no cases yet at M0; the harness that walks these folders arrives with M1. From then on, adding a regression test = adding a folder — no Swift required.
+This folder is the engine's executable specification (SDD §10). `CorpusTests.testGoldenCorpus` walks every case folder here and asserts the engine reproduces its `expected.json` exactly — adding a regression test = adding a folder, no Swift required.
 
 ## Case format
 
@@ -13,7 +13,7 @@ Corpus/<case_name>/
 └── expected.json    # the report the engine must produce for this pair
 ```
 
-`expected.json` carries the fields the SDD names (verdict, convergence level, change count, formatting count, hunk kinds); the schema is frozen when the M1 harness lands. Working shape:
+`expected.json` carries the fields the SDD names (verdict, convergence level, change count, formatting count, hunk kinds). The schema below is frozen as of M1:
 
 ```json
 {
@@ -36,4 +36,4 @@ Corpus/<case_name>/
 
 One phenomenon per case, in the smallest inputs that demonstrate it. Name folders in snake_case after the phenomenon: `crlf_only`, `reflow_paragraph`, `paragraph_split`, `rename_only`. Encode tricky bytes exactly (CRLF, BOM, NBSP, smart quotes) — files are compared as-is, so an editor that "cleans" line endings will quietly destroy a case.
 
-Cases planned for M1 mirror SDD §3.5 and §9: reflow, blank-line runs, CRLF/BOM, NBSP, smart quotes, paragraph split, indentation-only, rename-only, mixed, JSON-ish, minified, emoji, bidi, empty, identical, mostly-rewritten.
+The M1 corpus ships 27 cases mirroring SDD §3.5 and §9: reflow, blank-line runs, CRLF/BOM, invisibles, NFC composition, NBSP, smart quotes, space runs, EOF newline, trailing spaces, re-indentation, tabs-vs-spaces, indentation-sensitive Python, JSON, paragraph split, rename-only, mixed, case-only, emoji modifier, bidi, minified, mostly-rewritten, and the empty/identical edge cases. The `nfc_composition` case is a regression guard: engine equality must be codepoint-exact, never Swift's canonical-equivalence `String ==`.

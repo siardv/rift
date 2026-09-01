@@ -1,0 +1,10 @@
+{
+  "profile": "prose",
+  "verdict": "changed",
+  "convergenceLevel": null,
+  "contentChanges": 1,
+  "formattingOnly": 3,
+  "hunkKinds": [
+    "modification"
+  ]
+}

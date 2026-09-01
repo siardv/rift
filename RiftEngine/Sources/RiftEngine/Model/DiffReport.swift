@@ -1,29 +1,42 @@
 /// levels of the strictness ladder (sdd §3.2); cumulative, raw value is the level number
 public enum StrictnessLevel: Int, Sendable, Hashable, Codable, CaseIterable, Comparable {
     case exact = 0    // L0 — texts as given
-    case encoding = 1 // L1 — line endings, nfc, bom, trailing whitespace, eof newline
+    case encoding = 1 // L1 — line endings, nfc, invisibles, trailing whitespace, eof newline
     case spacing = 2  // L2 — space/tab runs, blank-line runs, nbsp, typographic equivalence
     case layout = 3   // L3 — prose reflow, code indentation
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
-}
 
-/// which profile was applied and whether detection or an override chose it (sdd §3.3, §5.2)
-/// m1 adds the detector's score summary ("why")
-public struct DetectedProfile: Sendable, Hashable {
-    public let profile: Profile
-    public let isAutomatic: Bool
-
-    public init(profile: Profile, isAutomatic: Bool) {
-        self.profile = profile
-        self.isAutomatic = isAutomatic
+    /// display label: "L0" through "L3"
+    public var label: String {
+        "L\(rawValue)"
     }
 }
 
-/// one row of the ladder readout: was the pair equal at this level,
-/// and how many formatting-only sites this level resolved (sdd §3.4, §6.6)
+/// which profile was applied, how sure the detector was, and why (sdd §3.3, §6.2)
+public struct DetectedProfile: Sendable, Hashable {
+    public let profile: Profile
+    public let isAutomatic: Bool
+    public let confidence: Double
+    /// code only: indentation looks meaning-bearing, so l3 keeps it (sdd §3.3, r-8)
+    public let isIndentationSensitive: Bool
+    /// one line of detector reasoning for the inspector
+    public let explanation: String
+
+    public init(profile: Profile, isAutomatic: Bool, confidence: Double,
+                isIndentationSensitive: Bool, explanation: String) {
+        self.profile = profile
+        self.isAutomatic = isAutomatic
+        self.confidence = confidence
+        self.isIndentationSensitive = isIndentationSensitive
+        self.explanation = explanation
+    }
+}
+
+/// one row of the ladder readout: was the pair equal at this level, and how many
+/// formatting-only sites are attributed to exactly this level (sdd §3.4, §6.6)
 public struct LadderLevelResult: Sendable, Hashable {
     public let level: StrictnessLevel
     public let isEqual: Bool
@@ -38,7 +51,7 @@ public struct LadderLevelResult: Sendable, Hashable {
 
 /// the banner-level outcome of a comparison (sdd §3.4)
 public enum Verdict: Sendable, Hashable {
-    /// equal at L0, byte-for-byte
+    /// equal at l0, byte-for-byte
     case identical
     /// equal at `level`; `count` formatting-only differences were set aside (and remain revealable)
     case formattingOnly(level: StrictnessLevel, count: Int)
@@ -47,16 +60,18 @@ public enum Verdict: Sendable, Hashable {
 }
 
 /// everything the ui needs to render a comparison; the app never computes (sdd §5.2)
-/// m0 stub shape — m1 adds `document: DiffDocument` (ordered hunks with provenance)
 public struct DiffReport: Sendable, Hashable {
     public let verdict: Verdict
     public let profile: DetectedProfile
-    /// levels actually evaluated, in ladder order
+    /// all four levels, in ladder order
     public let ladder: [LadderLevelResult]
+    public let document: DiffDocument
 
-    public init(verdict: Verdict, profile: DetectedProfile, ladder: [LadderLevelResult]) {
+    public init(verdict: Verdict, profile: DetectedProfile,
+                ladder: [LadderLevelResult], document: DiffDocument) {
         self.verdict = verdict
         self.profile = profile
         self.ladder = ladder
+        self.document = document
     }
 }

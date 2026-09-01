@@ -1,0 +1,1 @@
+var a=1;function inc(x){return x+a}function dec(x){return x-a}var state={count:0,step:a};var a=1;function inc(x){return x+a}function dec(x){return x-a}var state={count:0,step:a};var a=1;function inc(x){return x+a}function dec(x){return x-a}var state={count:0,step:a};

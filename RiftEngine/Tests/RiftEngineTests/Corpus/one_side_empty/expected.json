@@ -1,0 +1,10 @@
+{
+  "profile": "plain",
+  "verdict": "changed",
+  "convergenceLevel": null,
+  "contentChanges": 1,
+  "formattingOnly": 0,
+  "hunkKinds": [
+    "insertion"
+  ]
+}

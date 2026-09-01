@@ -1,0 +1,5 @@
+{
+  "name": "rift",
+  "free": true,
+  "levels": [0, 1, 2, 3]
+}

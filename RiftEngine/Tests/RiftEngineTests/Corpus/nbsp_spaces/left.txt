@@ -1,0 +1,3 @@
+The gap is measured.
+
+The noise is counted.

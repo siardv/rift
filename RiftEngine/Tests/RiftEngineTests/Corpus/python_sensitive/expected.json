@@ -1,0 +1,13 @@
+{
+  "profile": "code",
+  "verdict": "changed",
+  "convergenceLevel": null,
+  "contentChanges": 4,
+  "formattingOnly": 0,
+  "hunkKinds": [
+    "modification",
+    "modification",
+    "modification",
+    "modification"
+  ]
+}

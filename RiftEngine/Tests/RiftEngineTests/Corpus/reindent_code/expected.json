@@ -1,0 +1,8 @@
+{
+  "profile": "code",
+  "verdict": "formattingOnly",
+  "convergenceLevel": "L3",
+  "contentChanges": 0,
+  "formattingOnly": 3,
+  "hunkKinds": []
+}

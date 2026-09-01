@@ -22,7 +22,7 @@ Every token carries provenance back to the original bytes, so each ignored diffe
 
 ## Status
 
-**M0 — repository skeleton.** The engine's public API exists as a stub (`RiftEngine.compare(_:_:options:)`); the ladder, detector, and diff pipeline land with M1. Not yet on the App Store.
+**M1 — engine.** `RiftEngine.compare(_:_:options:)` now runs the full pipeline: the strictness ladder with provenance, content-profile auto-detection (with the conservative indentation-sensitivity guard for Python/YAML-like code), Myers alignment with pairing and refinement, paragraph split/merge labeling, and formatting accounting — verified by a 26-case golden corpus plus property tests on macOS and Linux. The UI (M2) is next; not yet on the App Store.
 
 ## Building
 

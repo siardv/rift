@@ -1,0 +1,3 @@
+One sentence here.  Another follows.
+
+Second paragraph.  Also doubled.
