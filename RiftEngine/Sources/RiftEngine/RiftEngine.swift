@@ -124,7 +124,7 @@ public enum RiftEngine {
 
         var rawHunks: [Refiner.RawHunk] = []
         var contentChanges = 0
-        var siteLevels: [Int] = []
+        var rawSites: [FormattingAccountant.RawSite] = []
         var degraded = overSoft
         var degradationReason: DegradationReason? = overHard ? .inputTooLarge
             : (overSoft ? .softThreshold : nil)
@@ -141,15 +141,18 @@ public enum RiftEngine {
             let allPairs = (0..<count).map {
                 FormattingAccountant.AlignedPair(a: $0, b: $0, isContent: false)
             }
-            let raw = FormattingAccountant.siteLevels(aBytes: aBytes, bBytes: bBytes,
-                                                      ua: ua, ub: ub, pairs: allPairs,
-                                                      profile: profile, rules: rules,
-                                                      sensitive: sensitive)
+            let raw = FormattingAccountant.sites(aBytes: aBytes, bBytes: bBytes,
+                                                 ua: ua, ub: ub, pairs: allPairs,
+                                                 profile: profile, rules: rules,
+                                                 sensitive: sensitive)
             // a slice out of context can look like it needs a higher level than the
             // document did (an eof newline reads as a blank line); the document's
             // convergence level bounds every site (sdd §9)
-            siteLevels = raw.map { min($0, conv) }
-            verdict = .formattingOnly(level: levelFrom(conv), count: siteLevels.count)
+            rawSites = raw.map {
+                FormattingAccountant.RawSite(level: min($0.level, conv),
+                                             rangeA: $0.rangeA, rangeB: $0.rangeB)
+            }
+            verdict = .formattingOnly(level: levelFrom(conv), count: rawSites.count)
             if !ua.isEmpty {
                 rawHunks = [Refiner.RawHunk(kind: .equal, a: 0..<ua.count, b: 0..<ub.count)]
             }
@@ -177,31 +180,47 @@ public enum RiftEngine {
                                                                    profile: unitProfile)
             }
             if isStrict {
-                siteLevels = []  // strict shows everything; nothing is set aside
+                rawSites = []  // strict shows everything; nothing is set aside
             } else {
-                siteLevels = FormattingAccountant.siteLevels(
+                rawSites = FormattingAccountant.sites(
                     aBytes: aBytes, bBytes: bBytes, ua: ua, ub: ub,
                     pairs: FormattingAccountant.pairs(from: rawHunks),
                     profile: profile, rules: rules, sensitive: sensitive)
             }
-            verdict = .changed(contentChanges: contentChanges, formattingOnly: siteLevels.count)
+            verdict = .changed(contentChanges: contentChanges, formattingOnly: rawSites.count)
         }
         if isCancelled() { return nil }
 
         var ladder: [LadderLevelResult] = []
         for level in 0...3 {
-            let resolved = level > 0 ? siteLevels.filter { $0 == level }.count : 0
+            let resolved = level > 0 ? rawSites.filter { $0.level == level }.count : 0
             ladder.append(LadderLevelResult(level: levelFrom(level),
                                             isEqual: equalAt[level],
                                             resolvedSiteCount: resolved))
         }
+
+        // public sites in document order with provenance (fr-10); recording
+        // order interleaves paired units and gaps, so sort by ranges — the sort
+        // keys are disjoint windows, making the order total and deterministic
+        let sites = rawSites
+            .sorted {
+                if $0.rangeA.lowerBound != $1.rangeA.lowerBound {
+                    return $0.rangeA.lowerBound < $1.rangeA.lowerBound
+                }
+                if $0.rangeA.upperBound != $1.rangeA.upperBound {
+                    return $0.rangeA.upperBound < $1.rangeA.upperBound
+                }
+                return $0.rangeB.lowerBound < $1.rangeB.lowerBound
+            }
+            .map { FormattingSite(level: levelFrom($0.level), rangeA: $0.rangeA, rangeB: $0.rangeB) }
 
         let hunks = materialize(rawHunks, ua: ua, ub: ub,
                                 totalA: aBytes.count, totalB: bBytes.count,
                                 suppressSegments: degraded, profile: unitProfile)
         let document = DiffDocument(hunks: hunks, isDegraded: degraded,
                                     degradationReason: degradationReason)
-        return DiffReport(verdict: verdict, profile: detected, ladder: ladder, document: document)
+        return DiffReport(verdict: verdict, profile: detected, ladder: ladder,
+                          sites: sites, document: document)
     }
 
     /// coarse block result for pathological inputs (sdd §6.4): equal prefix and

@@ -12,6 +12,16 @@ enum FormattingAccountant {
         let isContent: Bool
     }
 
+    /// one recorded site before public materialization (fr-10): the attributed
+    /// level (1...3) plus the raw utf-8 byte ranges of the differing slices in
+    /// each original. emitted in recording order (paired units first, then
+    /// gaps); RiftEngine sorts into document order for the public report
+    struct RawSite {
+        let level: Int
+        let rangeA: Range<Int>
+        let rangeB: Range<Int>
+    }
+
     static func pairs(from hunks: [Refiner.RawHunk]) -> [AlignedPair] {
         var out: [AlignedPair] = []
         for h in hunks {
@@ -49,18 +59,19 @@ enum FormattingAccountant {
         String(decoding: bytes[range], as: UTF8.self)
     }
 
-    /// returns the attributed level (1...3) of every site, in document order
-    static func siteLevels(aBytes: [UInt8], bBytes: [UInt8], ua: [Unit], ub: [Unit],
-                           pairs: [AlignedPair], profile: Profile,
-                           rules: RuleSet, sensitive: Bool) -> [Int] {
-        var out: [Int] = []
+    /// records every site with provenance ranges, in recording order
+    static func sites(aBytes: [UInt8], bBytes: [UInt8], ua: [Unit], ub: [Unit],
+                      pairs: [AlignedPair], profile: Profile,
+                      rules: RuleSet, sensitive: Bool) -> [RawSite] {
+        var out: [RawSite] = []
         func record(_ ra: Range<Int>, _ rb: Range<Int>) {
             // byte-exact difference test on the raw slices
             if aBytes[ra] != bBytes[rb] {
                 let sa = sliceString(aBytes, ra)
                 let sb = sliceString(bBytes, rb)
-                out.append(lowestEqualLevel(sa, sb, profile: profile,
-                                            rules: rules, sensitive: sensitive) ?? 3)
+                let level = lowestEqualLevel(sa, sb, profile: profile,
+                                             rules: rules, sensitive: sensitive) ?? 3
+                out.append(RawSite(level: level, rangeA: ra, rangeB: rb))
             }
         }
         for pair in pairs where !pair.isContent {
@@ -74,7 +85,7 @@ enum FormattingAccountant {
                 let sb = String(decoding: bBytes, as: UTF8.self)
                 if let level = lowestEqualLevel(sa, sb, profile: profile,
                                                 rules: rules, sensitive: sensitive) {
-                    out.append(level)
+                    out.append(RawSite(level: level, rangeA: 0..<aBytes.count, rangeB: 0..<bBytes.count))
                 }
             }
             return out
@@ -95,5 +106,14 @@ enum FormattingAccountant {
                    ub[last.b].range.upperBound..<bBytes.count)
         }
         return out
+    }
+
+    /// returns the attributed level (1...3) of every site, in recording order
+    /// (kept as the m1 entry point; levels match `sites` exactly)
+    static func siteLevels(aBytes: [UInt8], bBytes: [UInt8], ua: [Unit], ub: [Unit],
+                           pairs: [AlignedPair], profile: Profile,
+                           rules: RuleSet, sensitive: Bool) -> [Int] {
+        sites(aBytes: aBytes, bBytes: bBytes, ua: ua, ub: ub, pairs: pairs,
+              profile: profile, rules: rules, sensitive: sensitive).map(\.level)
     }
 }

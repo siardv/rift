@@ -49,6 +49,23 @@ public struct LadderLevelResult: Sendable, Hashable {
     }
 }
 
+/// one formatting-only difference with provenance (sdd §3.4, §6.6, fr-10): the
+/// utf-8 byte ranges of the differing raw slices in each ORIGINAL string,
+/// attributed to the lowest ladder level whose canonicalization resolves the
+/// difference. `level` is never `.exact`; either range may be empty (bytes
+/// present on one side only, e.g. a trailing eof newline)
+public struct FormattingSite: Sendable, Hashable {
+    public let level: StrictnessLevel
+    public let rangeA: Range<Int>
+    public let rangeB: Range<Int>
+
+    public init(level: StrictnessLevel, rangeA: Range<Int>, rangeB: Range<Int>) {
+        self.level = level
+        self.rangeA = rangeA
+        self.rangeB = rangeB
+    }
+}
+
 /// the banner-level outcome of a comparison (sdd §3.4)
 public enum Verdict: Sendable, Hashable {
     /// equal at l0, byte-for-byte
@@ -65,13 +82,18 @@ public struct DiffReport: Sendable, Hashable {
     public let profile: DetectedProfile
     /// all four levels, in ladder order
     public let ladder: [LadderLevelResult]
+    /// every formatting-only site with provenance, in document order (fr-10);
+    /// `sites.count` always equals the verdict's formatting-only count
+    public let sites: [FormattingSite]
     public let document: DiffDocument
 
     public init(verdict: Verdict, profile: DetectedProfile,
-                ladder: [LadderLevelResult], document: DiffDocument) {
+                ladder: [LadderLevelResult], sites: [FormattingSite] = [],
+                document: DiffDocument) {
         self.verdict = verdict
         self.profile = profile
         self.ladder = ladder
+        self.sites = sites
         self.document = document
     }
 }
