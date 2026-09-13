@@ -3,21 +3,20 @@ import RiftEngine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// one input pane as a document well (fr-1, sdd §7.2): a transparent field on
-/// the workspace, defined by a firm top rule and a quieter bottom hairline —
-/// first lines + counts, paste / file / clear, tap to edit, drag & drop target.
-/// the type keeps its m2 name; only the presentation changed in m3
+/// one input pane as an editorial input field (fr-1, sdd §7.2, m3.1): a paper
+/// field on the ivory canvas with a crisp low-contrast edge, a two-role
+/// heading, a pane-specific placeholder or the first lines, and a 44-point row
+/// of plain text actions — tap to edit, drag & drop target. the type keeps its
+/// m2 name; only the presentation changed
 struct PaneCard: View {
     let pane: PaneID
     @Bindable var session: CompareSession
-    /// true when this pane is empty while the other side already has text —
-    /// the "waiting" state (sdd §7.3)
-    let hintEmphasized: Bool
     let onRequestImport: (PaneID) -> Void
 
     @State private var isEditorPresented = false
     @State private var isDropTargeted = false
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var text: String {
         session.text(for: pane)
@@ -27,24 +26,32 @@ struct PaneCard: View {
         session.meta(for: pane)
     }
 
+    private var word: String {
+        pane == .a ? "Original" : "Revision"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            RuleLine(weight: .rule)
-            VStack(alignment: .leading, spacing: 6) {
-                header
-                preview
-                footer
-            }
-            .padding(.horizontal, 2)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
-            RuleLine()
+            heading
+                .padding(.horizontal, Theme.fieldInset)
+                .accessibilityHidden(true)
+            preview
+                .padding(.horizontal, Theme.fieldInset)
+                .padding(.top, 6)
+            actionRow
+                .padding(.trailing, Theme.fieldInset)
+                .padding(.top, 8)
         }
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
-            // drop feedback: a restrained low-radius outline, nothing filled
+        .background(
             RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
-                .stroke(Theme.ink, lineWidth: isDropTargeted ? 1 : 0)
+                .fill(Theme.field)
+        )
+        .overlay(
+            // the crisp edge; the drop target firms it up to ink, nothing filled
+            RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
+                .strokeBorder(isDropTargeted ? Theme.ink : Theme.fieldEdge, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -60,105 +67,222 @@ struct PaneCard: View {
         .accessibilityLabel(accessibilitySummary)
     }
 
-    // MARK: - header: `A / ORIGINAL`, source, decoded-as badge
+    // MARK: - heading: marker + word, source, badge, counts
 
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(pane == .a ? "A / ORIGINAL" : "B / REVISION")
-                .font(Theme.label)
-                .foregroundStyle(Theme.ink)
-            if let source = meta.sourceLabel {
-                Text(source)
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+    /// three complete candidates, chosen by what actually fits: one row;
+    /// identity / source / badge with the counts beneath; everything stacked.
+    /// accessibility sizes go straight to the stacked layout
+    @ViewBuilder
+    private var heading: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            headingStacked
+        } else {
+            ViewThatFits(in: .horizontal) {
+                headingOneRow
+                headingTwoRows
+                headingStacked
             }
-            if let decoded = meta.decodedAs {
-                Text("DECODED AS \(decoded.uppercased())")
-                    .font(Theme.dataSmall)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
-                            .stroke(Theme.hairline, lineWidth: 0.5)
-                    )
-                    .accessibilityLabel("decoded as \(decoded)")
-            }
-            Spacer(minLength: 0)
         }
     }
 
-    // MARK: - preview: first lines, or the literal state
+    private var headingOneRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            identity
+            sourceText(separated: true)
+            decodedBadge
+            Spacer(minLength: 12)
+            countsText
+        }
+    }
+
+    private var headingTwoRows: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                identity
+                sourceText(separated: true)
+                decodedBadge
+            }
+            countsText
+        }
+    }
+
+    private var headingStacked: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            identity
+            sourceText(separated: false)
+            decodedBadge
+            countsText
+        }
+    }
+
+    /// the two typographic roles: a compact strong marker and the quiet word
+    private var identity: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(pane.rawValue)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+            Text(word)
+                .font(.subheadline)
+                .foregroundStyle(Theme.inkSecondary)
+        }
+        .fixedSize()
+    }
+
+    /// filename or source hint; yields first when the row is tight
+    @ViewBuilder
+    private func sourceText(separated: Bool) -> some View {
+        if let source = meta.sourceLabel {
+            Text(separated ? "· \(source)" : source)
+                .font(.footnote)
+                .foregroundStyle(Theme.inkSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(-1)
+        }
+    }
+
+    /// analytical metadata keeps its mono badge (sdd §6.1) and never truncates
+    @ViewBuilder
+    private var decodedBadge: some View {
+        if let decoded = meta.decodedAs {
+            Text("DECODED AS \(decoded.uppercased())")
+                .font(Theme.dataSmall)
+                .foregroundStyle(Theme.inkSecondary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
+                        .stroke(Theme.hairline, lineWidth: 0.5)
+                )
+                .fixedSize()
+        }
+    }
+
+    /// counts are measurements, so they keep the mono uppercase register
+    @ViewBuilder
+    private var countsText: some View {
+        if let counts = session.counts(for: pane) {
+            Text("\(counts.characters.formatted()) CHAR · \(counts.words.formatted()) WORD · \(counts.lines.formatted()) LINE")
+                .font(Theme.dataSmall)
+                .foregroundStyle(Theme.inkSecondary)
+                .lineLimit(2)
+        }
+    }
+
+    // MARK: - preview: pane-specific placeholder, or the first lines
 
     @ViewBuilder
     private var preview: some View {
         if text.isEmpty {
-            Text(emptyStateText)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.vertical, 2)
+            Text(pane == .a ? "Tap to add original." : "Tap to add revision.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.inkSecondary)
         } else {
             Text(String(text.prefix(160)))
-                .font(.footnote)
+                .font(.subheadline)
+                .foregroundStyle(Theme.ink)
                 .lineLimit(2)
-                .foregroundStyle(.primary)
         }
     }
 
-    /// literal states (sdd §7.3): what the pane holds, not what to do
-    private var emptyStateText: String {
-        guard hintEmphasized else { return "No text" }
-        return pane == .a ? "Add original" : "Waiting for revision"
+    // MARK: - action row: Paste | Open File… … Clear / Undo
+
+    /// one row when it fits, otherwise stacked; accessibility sizes stack
+    /// outright. order is always Paste → Open File… → Clear / Undo
+    @ViewBuilder
+    private var actionRow: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            actionsStacked
+        } else {
+            ViewThatFits(in: .horizontal) {
+                actionsOneRow
+                actionsStacked
+            }
+        }
     }
 
-    // MARK: - footer: textual actions + compact counts
+    private var actionsOneRow: some View {
+        HStack(alignment: .center, spacing: 0) {
+            pasteControl
+            RowDivider()
+            openFileAction
+                .padding(.leading, 12)
+            Spacer(minLength: 12)
+            trailingAction(alignment: .trailing)
+        }
+        .frame(minHeight: 44)
+    }
 
-    private var footer: some View {
-        HStack(alignment: .center, spacing: 6) {
-            PasteButton(payloadType: String.self) { strings in
-                Task { @MainActor in
-                    session.pasted(strings, into: pane)
+    private var actionsStacked: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pasteControl
+            openFileAction
+                .padding(.leading, Theme.fieldInset)
+            trailingAction(alignment: .leading)
+                .padding(.leading, Theme.fieldInset)
+        }
+    }
+
+    /// the native paste control (fr-1), tinted to the field so only its label
+    /// shows, laid out in a 44-point frame with a rectangular content shape.
+    /// its label color on this fill and its interactive frame are verified on
+    /// device (m3.1 acceptance); pasteboard access stays the system's
+    private var pasteControl: some View {
+        PasteButton(payloadType: String.self) { strings in
+            Task { @MainActor in
+                session.pasted(strings, into: pane)
+            }
+        }
+        .labelStyle(.titleOnly)
+        .controlSize(.small)
+        .buttonBorderShape(.roundedRectangle(radius: Theme.fieldRadius))
+        .tint(Theme.field)
+        .foregroundStyle(Theme.ink)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    private var openFileAction: some View {
+        TextAction(title: "Open File…", font: .subheadline, color: Theme.ink,
+                   horizontalPadding: 0, alignment: .leading) {
+            onRequestImport(pane)
+        }
+        .accessibilityLabel("Open a file")
+    }
+
+    /// trailing and subordinate: Clear while the pane has text; Undo, in the
+    /// same slot, only while this pane holds the one valid pending clear
+    @ViewBuilder
+    private func trailingAction(alignment: Alignment) -> some View {
+        if text.isEmpty {
+            if session.undoablePane == pane {
+                TextAction(title: "Undo", font: .subheadline, color: Theme.ink,
+                           horizontalPadding: 0, alignment: alignment) {
+                    session.undoClear()
                 }
+                .accessibilityLabel("Undo clear of pane \(pane.rawValue)")
             }
-            .labelStyle(.titleOnly)
-            .buttonBorderShape(.roundedRectangle(radius: Theme.fieldRadius))
-            .controlSize(.small)
-            .tint(Theme.pasteTint)
-
-            TextAction(title: "File") {
-                onRequestImport(pane)
-            }
-            .accessibilityLabel("Import from Files")
-
-            TextAction(title: "Clear") {
+        } else {
+            TextAction(title: "Clear", font: .subheadline, color: Theme.inkSecondary,
+                       horizontalPadding: 0, alignment: alignment) {
                 session.clear(pane, undoManager: undoManager)
             }
-            .disabled(text.isEmpty)
             .accessibilityLabel("Clear pane \(pane.rawValue)")
-
-            Spacer(minLength: 0)
-
-            if let counts = session.counts(for: pane) {
-                Text("\(counts.characters.formatted()) CHAR · \(counts.words.formatted()) WORD · \(counts.lines.formatted()) LINE")
-                    .font(Theme.dataSmall)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .accessibilityLabel("\(counts.characters) characters, \(counts.words) words, \(counts.lines) lines")
-            }
         }
     }
+
+    // MARK: - accessibility
 
     private var accessibilitySummary: String {
         let role = pane == .a ? "original" : "revision"
+        let source = meta.sourceLabel.map { ", \($0)" } ?? ""
+        let decoded = meta.decodedAs.map { ", decoded as \($0)" } ?? ""
         if text.isEmpty {
             return "Pane \(pane.rawValue), \(role), empty. Double-tap to type."
         }
         let counts = session.counts(for: pane)
-        let detail = counts.map { "\($0.characters) characters, \($0.words) words, \($0.lines) lines" } ?? ""
-        return "Pane \(pane.rawValue), \(role), \(detail). Double-tap to edit."
+        let detail = counts.map { ", \($0.characters) characters, \($0.words) words, \($0.lines) lines" } ?? ""
+        return "Pane \(pane.rawValue), \(role)\(source)\(detail)\(decoded). Double-tap to edit."
     }
 
     // MARK: - drag & drop (fr-1)
@@ -216,7 +340,7 @@ struct PaneEditorSheet: View {
                 .scrollContentBackground(.hidden)
                 .padding(.horizontal, 8)
                 .background(Theme.paper)
-                .navigationTitle(pane == .a ? "A / Original" : "B / Revision")
+                .navigationTitle(pane == .a ? "Original" : "Revision")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {

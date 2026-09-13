@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// shared visual furniture of the m3 rule-led grammar (sdd §7.1): rules in two
-/// weights, the interrupted rule that stands in for collapsed context, plain
-/// textual actions with full hit areas, and the divided copy row. nothing here
-/// draws a shadow, a capsule, or a card
+/// shared visual furniture (sdd §7.1): rules in two weights, the interrupted
+/// rule that stands in for collapsed context, plain textual actions with
+/// genuine 44-point frames, the one outlined action, the field-row divider,
+/// and the divided copy row. nothing here draws a shadow, a capsule, a pill,
+/// or a card
 
 // MARK: - rules
 
@@ -46,10 +47,16 @@ struct InterruptedRule: View {
 
 // MARK: - actions
 
-/// a plain textual action in the accent ink with a 44-point hit area — the
-/// replacement for m2's bordered capsules on the workspace (nfr-5)
+/// a plain textual action whose label is laid out in a genuine 44-point
+/// frame — the replacement for m2's bordered capsules on the workspace
+/// (nfr-5). the defaults are the copy row's footnote-medium accent text; the
+/// input fields pass their own font, color, padding and alignment (m3.1)
 struct TextAction: View {
     let title: String
+    var font: Font = .footnote.weight(.medium)
+    var color: Color = Theme.accent
+    var horizontalPadding: CGFloat = 8
+    var alignment: Alignment = .center
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
@@ -57,13 +64,50 @@ struct TextAction: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.footnote.weight(.medium))
-                .padding(.horizontal, 8)
-                .frame(minWidth: 44, minHeight: 44)
+                .font(font)
+                .padding(.horizontal, horizontalPadding)
+                .frame(minWidth: 44, minHeight: 44, alignment: alignment)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isEnabled ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
+        .foregroundStyle(isEnabled ? AnyShapeStyle(color) : AnyShapeStyle(.secondary))
+    }
+}
+
+/// a plain textual action with a crisp one-point outline (m3.1): the single
+/// outlined control in the app, used for `Load sample` beneath the
+/// empty-result instruction. the outline is drawn on the padded label; the
+/// button itself is laid out at 44 points
+struct OutlinedTextAction: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
+                        .strokeBorder(Theme.fieldEdge, lineWidth: 1)
+                )
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.ink)
+    }
+}
+
+/// the vertical divider of a field's action row: one point of field edge,
+/// the height of a line of subheadline text (m3.1)
+struct RowDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Theme.fieldEdge)
+            .frame(width: 1, height: 18)
+            .accessibilityHidden(true)
     }
 }
 

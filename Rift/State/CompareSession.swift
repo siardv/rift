@@ -104,13 +104,9 @@ struct IngestionNotice: Identifiable, Sendable {
     let message: String
 }
 
-/// snapshot for undoable clear (sdd §7.5: no confirmation dialogs)
-struct ClearBackup: Sendable {
-    let textA: String
-    let textB: String
-    let metaA: PaneMeta
-    let metaB: PaneMeta
-}
+/// the one undoable clear (sdd §7.5: no confirmation dialogs): recorded per
+/// pane with a unique token by the pure ledger in ClearUndoLedger.swift
+typealias ClearRecord = ClearUndoLedger<PaneID, PaneMeta>.Record
 
 /// mode selection for the inspector's segmented control (fr-5)
 enum ModeChoice: String, CaseIterable, Sendable, Hashable {
@@ -181,8 +177,8 @@ private func computeOutcome(a: String, b: String, options: CompareOptions,
 final class CompareSession {
     // MARK: - inputs
 
-    var textA = "" { didSet { inputsChanged() } }
-    var textB = "" { didSet { inputsChanged() } }
+    var textA = "" { didSet { textChanged(textA, in: .a) } }
+    var textB = "" { didSet { textChanged(textB, in: .b) } }
     var metaA = PaneMeta()
     var metaB = PaneMeta()
     private(set) var countsA: TextCounts?
@@ -209,7 +205,22 @@ final class CompareSession {
     /// fr-10: when true, formatting-only sites render dimmed in place
     var revealFormatting = false
     var ingestionNotice: IngestionNotice?
-    private(set) var clearBackup: ClearBackup?
+
+    // MARK: - pane-local undo (sdd §7.5, m3.1)
+
+    /// the pane whose clear can currently be undone; the only undo state views
+    /// read. mirrors the ledger and is refreshed by syncUndoState() after
+    /// every ledger transition (record, invalidation, swap, take, supersession)
+    private(set) var undoablePane: PaneID?
+
+    /// pure bookkeeping: which clear is pending, with a unique token per record
+    @ObservationIgnored private var ledger = ClearUndoLedger<PaneID, PaneMeta>()
+
+    /// the UndoManager the pending clear is registered with, so that an
+    /// invalidated, superseded or visibly undone clear also leaves the native
+    /// undo stack; this session registers no other undo actions, so
+    /// target-scoped removal is exact
+    @ObservationIgnored private weak var registeredUndoManager: UndoManager?
 
     // MARK: - scheduling
 
@@ -368,37 +379,94 @@ final class CompareSession {
         }
     }
 
+    /// clears one pane and makes exactly that clear undoable (sdd §7.5). an
+    /// empty pane is a no-op: nothing is recorded and nothing is registered.
+    /// a newer clear supersedes the pending one, including its native entry
     func clear(_ pane: PaneID, undoManager: UndoManager?) {
-        snapshotForUndo(undoManager)
+        let removed = text(for: pane)
+        guard !removed.isEmpty else { return }
+        discardRegisteredUndo()
+        guard let record = ledger.recordClear(of: pane, text: removed, meta: meta(for: pane)) else { return }
         setText("", for: pane, sourceLabel: nil, decodedAs: nil)
-    }
-
-    func clearAll(undoManager: UndoManager?) {
-        snapshotForUndo(undoManager)
-        metaA = PaneMeta()
-        metaB = PaneMeta()
-        textA = ""
-        textB = ""
-    }
-
-    private func snapshotForUndo(_ undoManager: UndoManager?) {
-        clearBackup = ClearBackup(textA: textA, textB: textB, metaA: metaA, metaB: metaB)
-        undoManager?.registerUndo(withTarget: self) { target in
-            Task { @MainActor in target.undoClear() }
+        // registered only now, after non-empty content was actually cleared
+        if let undoManager {
+            undoManager.registerUndo(withTarget: self) { target in
+                Task { @MainActor in target.undoClear(matching: record) }
+            }
+            undoManager.setActionName("Clear")
+            registeredUndoManager = undoManager
         }
-        undoManager?.setActionName("Clear")
+        syncUndoState()
     }
 
+    /// the visible Undo action in the cleared pane: consumes the pending
+    /// record, retires its native entry, then restores that pane only
     func undoClear() {
-        guard let backup = clearBackup else { return }
-        clearBackup = nil
-        metaA = backup.metaA
-        metaB = backup.metaB
-        textA = backup.textA
-        textB = backup.textB
+        guard let record = ledger.takePending() else {
+            syncUndoState()
+            return
+        }
+        discardRegisteredUndo()
+        restore(record)
+    }
+
+    /// the UndoManager path (shake / three-finger undo): consumes only the
+    /// exact record it was registered for. a stale callback — superseded or
+    /// invalidated — restores nothing and leaves the current record untouched.
+    /// no stack edits here: the manager is executing this very entry
+    func undoClear(matching record: ClearRecord) {
+        guard let taken = ledger.takePending(matching: record) else {
+            syncUndoState()
+            return
+        }
+        registeredUndoManager = nil
+        restore(taken)
+    }
+
+    /// consumed before restoring, so the incoming non-empty text cannot
+    /// invalidate anything; only the recorded pane's text and metadata move
+    private func restore(_ record: ClearRecord) {
+        setText(record.text, for: record.pane,
+                sourceLabel: record.meta.sourceLabel, decodedAs: record.meta.decodedAs)
+        syncUndoState()
+    }
+
+    /// every text change passes here first (fr-1): the ledger learns about a
+    /// refill before the comparison is rescheduled
+    private func textChanged(_ text: String, in pane: PaneID) {
+        let hadPending = ledger.pendingPane != nil
+        ledger.noteText(text, in: pane)
+        if hadPending, ledger.pendingPane == nil {
+            discardRegisteredUndo()
+        }
+        syncUndoState()
+        inputsChanged()
+    }
+
+    /// mirrors the ledger's pending pane for views after every transition
+    private func syncUndoState() {
+        let pane = ledger.pendingPane
+        if undoablePane != pane {
+            undoablePane = pane
+        }
+    }
+
+    /// removes the native "Undo Clear" entry of a record that can no longer be
+    /// restored (invalidated or superseded) or that the visible action has
+    /// already performed; never called from inside an undo callback
+    private func discardRegisteredUndo() {
+        registeredUndoManager?.removeAllActions(withTarget: self)
+        registeredUndoManager = nil
     }
 
     func swapSides() {
+        // the cleared slot changes meaning: drop the record before either
+        // text moves, so the didSet hooks below find nothing to invalidate
+        if ledger.pendingPane != nil {
+            ledger.noteSwap()
+            discardRegisteredUndo()
+            syncUndoState()
+        }
         let (a, b) = (textA, textB)
         let (ma, mb) = (metaA, metaB)
         let (ca, cb) = (countsA, countsB)

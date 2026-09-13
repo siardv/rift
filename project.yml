@@ -39,6 +39,10 @@ targets:
     platform: iOS
     sources:
       - RiftTests
+      # the pure clear/undo ledger is compiled into the test bundle too (m3.1):
+      # RiftTests has no host app, so app-side logic under test must be shared
+      # as source rather than imported from the Rift module
+      - path: Rift/State/ClearUndoLedger.swift
     dependencies:
       - package: RiftEngine
     settings:

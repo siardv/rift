@@ -2,7 +2,7 @@ import RiftEngine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// the single main screen (sdd §7.2): input wells, result header (eyebrow,
+/// the single main screen (sdd §7.2): input fields, result header (eyebrow,
 /// verdict, compact notation, metadata, rule), result view, and a rectangular
 /// change navigator in the bottom safe-area inset; inspector and settings live
 /// in sheets. the screen renders CompareSession state and never computes
@@ -118,11 +118,11 @@ struct CompareScreen: View {
         }
     }
 
-    // MARK: - header: wells, result statement, metadata (sdd §7.3)
+    // MARK: - header: fields, result statement, metadata (sdd §7.3)
 
     @ViewBuilder
     private func header(proxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {
             panes
                 .accessibilitySortPriority(1)
             if session.showsProgress {
@@ -133,26 +133,22 @@ struct CompareScreen: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 6)
+        .padding(.top, 8)
     }
 
     @ViewBuilder
     private var panes: some View {
-        let wellA = PaneCard(pane: .a, session: session,
-                             hintEmphasized: session.textA.isEmpty && !session.textB.isEmpty,
-                             onRequestImport: requestImport)
-        let wellB = PaneCard(pane: .b, session: session,
-                             hintEmphasized: session.textB.isEmpty && !session.textA.isEmpty,
-                             onRequestImport: requestImport)
+        let fieldA = PaneCard(pane: .a, session: session, onRequestImport: requestImport)
+        let fieldB = PaneCard(pane: .b, session: session, onRequestImport: requestImport)
         if isWide {
             HStack(alignment: .top, spacing: 16) {
-                wellA
-                wellB
+                fieldA
+                fieldB
             }
         } else {
-            VStack(spacing: 8) {
-                wellA
-                wellB
+            VStack(spacing: 12) {
+                fieldA
+                fieldB
             }
         }
     }
@@ -203,7 +199,7 @@ struct CompareScreen: View {
     }
 
     /// `PROSE / AUTO ▾` opens the detector's explanation and the override
-    /// (fr-4); indentation note and undo sit on the same line
+    /// (fr-4); the indentation note sits on the same line
     private func metadataRow(_ report: DiffReport) -> some View {
         HStack(alignment: .center, spacing: 14) {
             Button {
@@ -227,10 +223,6 @@ struct CompareScreen: View {
                     .accessibilityLabel("indentation significant")
             }
             Spacer(minLength: 0)
-            if session.clearBackup != nil {
-                TextAction(title: "Undo clear") { session.undoClear() }
-                    .padding(.vertical, -6)
-            }
         }
         .frame(minHeight: 32)
     }
@@ -283,16 +275,9 @@ struct CompareScreen: View {
                 }
                 .accessibilitySortPriority(2)
             }
-        } else if session.clearBackup != nil {
-            // one side cleared while the other still has text: keep the visible
-            // undo where the result metadata would otherwise offer it
-            HStack {
-                TextAction(title: "Undo clear") { session.undoClear() }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 8)
-            Spacer(minLength: 0)
         } else {
+            // one side filled: the empty field's placeholder carries the
+            // instruction and its own undo, so the area stays quiet (sdd §7.3)
             Spacer(minLength: 0)
         }
     }
@@ -319,38 +304,37 @@ struct CompareScreen: View {
         }
     }
 
-    /// left-aligned instruction beneath the wells; no slogan (sdd §7.3, fr-13)
+    /// the empty result area (sdd §7.3, fr-13): one instruction that names the
+    /// area and the single outlined `Load sample`, left aligned at the field
+    /// edge; nothing else claims the space — no container, rule or slogan
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Add an original and a revision.")
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Results appear here once both sides have text.")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .padding(.top, 14)
-            HStack(spacing: 8) {
-                TextAction(title: "Load sample") { session.loadSample() }
-                if session.clearBackup != nil {
-                    TextAction(title: "Undo clear") { session.undoClear() }
-                }
-            }
-            .padding(.leading, -8)
+                .foregroundStyle(Theme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            OutlinedTextAction(title: "Load sample") { session.loadSample() }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
+        .padding(.top, 20)
     }
 
-    // MARK: - toolbar (sdd §7.2): global actions only
+    // MARK: - toolbar (sdd §7.2): global actions only. swap exists only once
+    // there is something to swap; inspector and more are always present
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Button {
-                session.swapSides()
-            } label: {
-                Image(systemName: "arrow.left.arrow.right")
+            if session.hasAnyInput {
+                Button {
+                    session.swapSides()
+                } label: {
+                    Image(systemName: "arrow.left.arrow.right")
+                }
+                .accessibilityLabel("Swap sides")
             }
-            .disabled(!session.hasAnyInput)
-            .accessibilityLabel("Swap sides")
 
             Button {
                 isInspectorPresented = true
