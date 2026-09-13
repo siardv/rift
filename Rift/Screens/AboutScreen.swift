@@ -1,6 +1,9 @@
 import SwiftUI
+import UIKit
 
-/// license, source link, privacy statement (sdd §5.1, §8)
+/// about (sdd §5.1, §8): the supplied icon and a left-aligned factual
+/// hierarchy — name, version, local-only processing, source, license. sans
+/// throughout; no essay
 struct AboutScreen: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -13,54 +16,106 @@ struct AboutScreen: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 10) {
-                    Text("Rift")
-                        .font(.system(size: 52, weight: .semibold))
-                        .fontDesign(.serif)
-                        .padding(.top, 28)
-                    Text("See what actually changed.")
-                        .font(.title3)
-                        .fontDesign(.serif)
-                        .foregroundStyle(.secondary)
-                    Text("Version \(version)")
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                        .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .center, spacing: 16) {
+                        AppIconView(side: 64)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Rift")
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(Theme.ink)
+                            Text("VERSION \(version)")
+                                .font(Theme.data)
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel("Version \(version)")
+                        }
+                    }
+                    .padding(.top, 24)
+                    .padding(.bottom, 20)
 
-                    Divider()
-                        .overlay(Theme.hairline)
+                    RuleLine(weight: .rule)
+
+                    Text("Local-only text comparison. No accounts, analytics, or network access.")
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 16)
-                        .padding(.horizontal, 48)
 
-                    VStack(spacing: 14) {
-                        Text("Rift compares two texts at four strictness levels, reports where they converge, and keeps content changes separate from formatting noise. Everything it sets aside is counted, listed, and one tap away.")
-                        Text("Fully offline. No accounts, no analytics, no network access at all.")
-                    }
-                    .font(.subheadline)
-                    .fontDesign(.serif)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 28)
+                    RuleLine()
 
-                    VStack(spacing: 8) {
-                        Link("Source on GitHub", destination: URL(string: "https://github.com/siardv/rift")!)
+                    factRow("SOURCE") {
+                        Link("github.com/siardv/rift",
+                             destination: URL(string: "https://github.com/siardv/rift")!)
                             .font(.subheadline)
-                        Text("MIT license · © 2026 Siard van den Bosch")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
                     }
-                    .padding(.top, 20)
-                    .padding(.bottom, 32)
+                    RuleLine()
+                    factRow("LICENSE") {
+                        Text("MIT · © 2026 Siard van den Bosch")
+                            .font(.subheadline)
+                    }
+                    RuleLine()
                 }
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 32)
+                .frame(maxWidth: 560, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(Theme.paper)
+            .navigationTitle("About")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
         }
+        .tint(Theme.accent)
+    }
+
+    /// mono label column, sans value
+    private func factRow<Content: View>(_ label: String, @ViewBuilder value: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(label)
+                .font(Theme.label)
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .leading)
+            value()
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 12)
+    }
+}
+
+/// the app's own icon, read from the compiled bundle so the artwork exists
+/// exactly once (the asset catalog's universal 1024 source); clipped to the
+/// same continuous corner the home screen applies, so it looks like the icon
+/// and not like an unmasked square
+struct AppIconView: View {
+    let side: CGFloat
+
+    var body: some View {
+        if let image = Self.bundledIcon() {
+            Image(uiImage: image)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: side, height: side)
+                .clipShape(RoundedRectangle(cornerRadius: side * 0.2237, style: .continuous))
+                .accessibilityLabel("Rift app icon")
+        } else {
+            RoundedRectangle(cornerRadius: side * 0.2237, style: .continuous)
+                .stroke(Theme.hairline, lineWidth: 0.5)
+                .frame(width: side, height: side)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// CFBundleIcons → CFBundlePrimaryIcon → last (largest) CFBundleIconFiles
+    /// entry, the names the asset compiler writes into the generated info.plist.
+    /// nil in previews and unit tests, which have no compiled icon
+    private static func bundledIcon() -> UIImage? {
+        let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any]
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        let files = primary?["CFBundleIconFiles"] as? [String]
+        guard let name = files?.last else { return nil }
+        return UIImage(named: name)
     }
 }
 

@@ -3,13 +3,15 @@ import RiftEngine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// one input pane as a collapsed card (fr-1, sdd §7.2): first lines + counts,
-/// paste / files / clear, tap to edit, drag & drop target
+/// one input pane as a document well (fr-1, sdd §7.2): a transparent field on
+/// the workspace, defined by a firm top rule and a quieter bottom hairline —
+/// first lines + counts, paste / file / clear, tap to edit, drag & drop target.
+/// the type keeps its m2 name; only the presentation changed in m3
 struct PaneCard: View {
     let pane: PaneID
     @Bindable var session: CompareSession
     /// true when this pane is empty while the other side already has text —
-    /// the "quiet hint on the other pane" state (sdd §7.3)
+    /// the "waiting" state (sdd §7.3)
     let hintEmphasized: Bool
     let onRequestImport: (PaneID) -> Void
 
@@ -26,21 +28,23 @@ struct PaneCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            header
-            preview
-            footer
+        VStack(alignment: .leading, spacing: 0) {
+            RuleLine(weight: .rule)
+            VStack(alignment: .leading, spacing: 6) {
+                header
+                preview
+                footer
+            }
+            .padding(.horizontal, 2)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+            RuleLine()
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Theme.card)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(isDropTargeted ? Color.accentColor : Theme.hairline,
-                                lineWidth: isDropTargeted ? 1.5 : 0.5)
-                )
+        .overlay(
+            // drop feedback: a restrained low-radius outline, nothing filled
+            RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
+                .stroke(Theme.ink, lineWidth: isDropTargeted ? 1 : 0)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -56,101 +60,105 @@ struct PaneCard: View {
         .accessibilityLabel(accessibilitySummary)
     }
 
+    // MARK: - header: `A / ORIGINAL`, source, decoded-as badge
+
     private var header: some View {
-        HStack(spacing: 6) {
-            Text(pane.rawValue)
-                .font(.subheadline.weight(.semibold))
-                .fontDesign(.serif)
-            Text(pane == .a ? "original" : "changed")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(pane == .a ? "A / ORIGINAL" : "B / REVISION")
+                .font(Theme.label)
+                .foregroundStyle(Theme.ink)
             if let source = meta.sourceLabel {
                 Text(source)
                     .font(.caption2)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                     .foregroundStyle(.secondary)
             }
             if let decoded = meta.decodedAs {
-                Text("decoded as \(decoded)")
-                    .font(.caption2)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .overlay(Capsule().stroke(Theme.hairline, lineWidth: 0.5))
+                Text("DECODED AS \(decoded.uppercased())")
+                    .font(Theme.dataSmall)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
+                            .stroke(Theme.hairline, lineWidth: 0.5)
+                    )
+                    .accessibilityLabel("decoded as \(decoded)")
             }
             Spacer(minLength: 0)
         }
     }
 
+    // MARK: - preview: first lines, or the literal state
+
     @ViewBuilder
     private var preview: some View {
         if text.isEmpty {
-            Text(hintEmphasized ? "Add the other side to compare." : "Paste, type, or drop text.")
+            Text(emptyStateText)
                 .font(.footnote)
-                .fontDesign(.serif)
-                .foregroundStyle(hintEmphasized ? Color.secondary : Color.secondary.opacity(0.7))
+                .foregroundStyle(.secondary)
                 .padding(.vertical, 2)
         } else {
             Text(String(text.prefix(160)))
                 .font(.footnote)
                 .lineLimit(2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
         }
     }
 
+    /// literal states (sdd §7.3): what the pane holds, not what to do
+    private var emptyStateText: String {
+        guard hintEmphasized else { return "No text" }
+        return pane == .a ? "Add original" : "Waiting for revision"
+    }
+
+    // MARK: - footer: textual actions + compact counts
+
     private var footer: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .center, spacing: 6) {
             PasteButton(payloadType: String.self) { strings in
                 Task { @MainActor in
                     session.pasted(strings, into: pane)
                 }
             }
-            .labelStyle(.iconOnly)
-            .buttonBorderShape(.capsule)
+            .labelStyle(.titleOnly)
+            .buttonBorderShape(.roundedRectangle(radius: Theme.fieldRadius))
             .controlSize(.small)
+            .tint(Theme.pasteTint)
 
-            Button {
+            TextAction(title: "File") {
                 onRequestImport(pane)
-            } label: {
-                Label("Files", systemImage: "folder")
-                    .labelStyle(.iconOnly)
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .controlSize(.small)
             .accessibilityLabel("Import from Files")
 
-            Button {
+            TextAction(title: "Clear") {
                 session.clear(pane, undoManager: undoManager)
-            } label: {
-                Label("Clear", systemImage: "xmark")
-                    .labelStyle(.iconOnly)
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .controlSize(.small)
             .disabled(text.isEmpty)
             .accessibilityLabel("Clear pane \(pane.rawValue)")
 
             Spacer(minLength: 0)
 
             if let counts = session.counts(for: pane) {
-                Text("\(counts.characters.formatted()) ch · \(counts.words.formatted()) w · \(counts.lines.formatted()) ln")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                Text("\(counts.characters.formatted()) CHAR · \(counts.words.formatted()) WORD · \(counts.lines.formatted()) LINE")
+                    .font(Theme.dataSmall)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .accessibilityLabel("\(counts.characters) characters, \(counts.words) words, \(counts.lines) lines")
             }
         }
     }
 
     private var accessibilitySummary: String {
+        let role = pane == .a ? "original" : "revision"
         if text.isEmpty {
-            return "Pane \(pane.rawValue), empty. Double-tap to type."
+            return "Pane \(pane.rawValue), \(role), empty. Double-tap to type."
         }
         let counts = session.counts(for: pane)
         let detail = counts.map { "\($0.characters) characters, \($0.words) words, \($0.lines) lines" } ?? ""
-        return "Pane \(pane.rawValue), \(detail). Double-tap to edit."
+        return "Pane \(pane.rawValue), \(role), \(detail). Double-tap to edit."
     }
 
     // MARK: - drag & drop (fr-1)
@@ -190,7 +198,7 @@ struct PaneCard: View {
     }
 }
 
-/// full-screen editor reached by tapping a pane card (fr-1: direct typing);
+/// full-screen editor reached by tapping a pane (fr-1: direct typing);
 /// autocorrection off — diff inputs must arrive verbatim
 struct PaneEditorSheet: View {
     let pane: PaneID
@@ -208,7 +216,7 @@ struct PaneEditorSheet: View {
                 .scrollContentBackground(.hidden)
                 .padding(.horizontal, 8)
                 .background(Theme.paper)
-                .navigationTitle(pane == .a ? "A — original" : "B — changed")
+                .navigationTitle(pane == .a ? "A / Original" : "B / Revision")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -216,6 +224,7 @@ struct PaneEditorSheet: View {
                     }
                 }
         }
+        .tint(Theme.accent)
         .onAppear { isFocused = true }
     }
 }

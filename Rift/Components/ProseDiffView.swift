@@ -9,7 +9,8 @@ enum DiffPresentation: String, Hashable {
 
 /// the prose reading view (fr-8, sdd §7.4): paragraphs as flowing serif text
 /// with inline track-changes-style highlights; unchanged runs collapse to a
-/// "⋯ n unchanged paragraphs" pill. side-by-side pairs the two originals
+/// rule interrupted by "n unchanged paragraphs". side-by-side pairs the two
+/// originals. serif here is one of its two production roles (sdd §7.1)
 struct ProseDiffView: View {
     let blocks: [ProseBlock]
     let presentation: DiffPresentation
@@ -54,14 +55,14 @@ struct ProseDiffView: View {
         VStack(alignment: .leading, spacing: 14) {
             if collapsed {
                 paragraphContent(block, index: 0)
-                expanderPill(blockID: block.id, hiddenCount: count - 2)
+                expander(blockID: block.id, hiddenCount: count - 2)
                 paragraphContent(block, index: count - 1)
             } else {
                 ForEach(0..<max(count, 0), id: \.self) { index in
                     paragraphContent(block, index: index)
                 }
                 if count > 3 {
-                    collapsePill(blockID: block.id)
+                    collapser(blockID: block.id)
                 }
             }
         }
@@ -92,7 +93,7 @@ struct ProseDiffView: View {
         } else {
             Text("—")
                 .font(proseFont)
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .accessibilityHidden(true)
         }
@@ -148,52 +149,40 @@ struct ProseDiffView: View {
         .accessibilityAction(named: "Copy after") { copy(plain(block.sideB)) }
     }
 
-    /// action row on a tapped change (sdd §7.5)
+    /// action row on a tapped change (sdd §7.5): same three outputs as m2
     private func copyActions(_ block: ProseBlock) -> some View {
-        HStack(spacing: 8) {
-            Button("Copy A") { copy(plain(block.sideA)) }
-                .disabled(block.sideA.isEmpty)
-            Button("Copy B") { copy(plain(block.sideB)) }
-                .disabled(block.sideB.isEmpty)
-            Button("Copy both") { copy(plain(block.sideA) + "\n⸻\n" + plain(block.sideB)) }
-        }
-        .font(.caption)
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.small)
+        CopyActionRow(
+            canCopyA: !block.sideA.isEmpty,
+            canCopyB: !block.sideB.isEmpty,
+            onCopyA: { copy(plain(block.sideA)) },
+            onCopyB: { copy(plain(block.sideB)) },
+            onCopyBoth: { copy(plain(block.sideA) + "\n⸻\n" + plain(block.sideB)) })
     }
 
-    // MARK: - collapse pills
+    // MARK: - collapsed context (rule-led, sdd §7.4)
 
-    private func expanderPill(blockID: Int, hiddenCount: Int) -> some View {
+    private func expander(blockID: Int, hiddenCount: Int) -> some View {
         Button {
             expandedBlocks.insert(blockID)
         } label: {
-            Text("⋯ \(hiddenCount) unchanged \(hiddenCount == 1 ? "paragraph" : "paragraphs")")
-                .font(.caption)
-                .fontDesign(.serif)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Theme.hairline, lineWidth: 0.5)
-                )
+            InterruptedRule(text: "\(hiddenCount) unchanged \(hiddenCount == 1 ? "paragraph" : "paragraphs")")
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Show \(hiddenCount) unchanged paragraphs")
     }
 
-    private func collapsePill(blockID: Int) -> some View {
+    private func collapser(blockID: Int) -> some View {
         Button {
             expandedBlocks.remove(blockID)
         } label: {
-            Text("collapse unchanged")
-                .font(.caption2)
-                .fontDesign(.serif)
-                .foregroundStyle(.tertiary)
+            InterruptedRule(text: "collapse unchanged")
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Collapse unchanged paragraphs")
     }
 
     // MARK: - copy helpers

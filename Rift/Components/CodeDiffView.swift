@@ -3,8 +3,9 @@ import UIKit
 
 /// the line grid (sdd §7.4): dual line-number gutters, +/− glyphs, intra-line
 /// highlights from segments, unchanged runs collapsible with 3 lines of
-/// context. side-by-side pairs rows on one shared vertical scroll, so the two
-/// columns stay synchronized by construction (fr-7)
+/// context behind a rule interrupted by "n unchanged lines". side-by-side pairs
+/// rows on one shared vertical scroll, so the two columns stay synchronized by
+/// construction (fr-7)
 struct CodeDiffView: View {
     let rows: [LineRow]
     let pairs: [LinePair]
@@ -213,7 +214,7 @@ struct CodeDiffView: View {
         } else {
             Color.clear
                 .frame(maxWidth: .infinity, minHeight: 18)
-                .background(Theme.card.opacity(0.45))
+                .background(Theme.absentFill)
         }
     }
 
@@ -222,7 +223,7 @@ struct CodeDiffView: View {
     private func gutter(_ number: Int?) -> some View {
         Text(number.map(String.init) ?? "")
             .font(.system(size: codeUnit * fontScale * 0.85, design: .monospaced))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .frame(width: gutterWidth, alignment: .trailing)
             .accessibilityHidden(true)
     }
@@ -267,38 +268,31 @@ struct CodeDiffView: View {
         return "line \(number): \(row.pieces.map(\.text).joined())"
     }
 
+    /// collapsed context (rule-led, sdd §7.4); the 3-line context on each
+    /// side is decided in the item builders above and is unchanged from m2
     private func expanderView(first: Int, count: Int) -> some View {
         Button {
             expandedRuns.insert(first)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "ellipsis")
-                Text("\(count) unchanged \(count == 1 ? "line" : "lines")")
-                    .fontDesign(.serif)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background(Theme.card.opacity(0.6))
+            InterruptedRule(text: "\(count) unchanged \(count == 1 ? "line" : "lines")")
+                .padding(.horizontal, 8)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Show \(count) unchanged lines")
     }
 
-    /// action row on a tapped change (sdd §7.5)
+    /// action row on a tapped change (sdd §7.5): same three outputs as m2
     private func copyActions(hunkIndex: Int) -> some View {
-        HStack(spacing: 8) {
-            Button("Copy A") { copy(hunkText(hunkIndex, side: .a)) }
-            Button("Copy B") { copy(hunkText(hunkIndex, side: .b)) }
-            Button("Copy both") {
+        CopyActionRow(
+            canCopyA: true,
+            canCopyB: true,
+            onCopyA: { copy(hunkText(hunkIndex, side: .a)) },
+            onCopyB: { copy(hunkText(hunkIndex, side: .b)) },
+            onCopyBoth: {
                 copy(hunkText(hunkIndex, side: .a) + "\n⸻\n" + hunkText(hunkIndex, side: .b))
-            }
-        }
-        .font(.caption)
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.small)
+            })
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
     }

@@ -2,8 +2,11 @@ import RiftEngine
 import SwiftUI
 import UIKit
 
-/// canonical banner copy (sdd §3.4) — shared by the banner, voiceover, and the
-/// exported summary so the app never says two different things
+/// canonical verdict copy (sdd §3.4) — shared by voiceover, the copy action,
+/// and the exported summary so the app never says two different things.
+/// `compact(_:)` is a separate, display-only rendering for the result header
+/// (m3); it never replaces the canonical sentences anywhere they are spoken,
+/// copied, or exported
 enum VerdictText {
     static func primary(_ verdict: Verdict) -> String {
         switch verdict {
@@ -40,6 +43,32 @@ enum VerdictText {
         }
     }
 
+    /// compact analytical notation for the visual secondary line (sdd §7.1):
+    /// `L0 · exact`, `L2 · spacing only · 3 sites`, `5 formatting sites`.
+    /// nil exactly when `secondary(_:)` is nil, so the reveal control appears
+    /// in the same states as before
+    static func compact(_ verdict: Verdict) -> String? {
+        switch verdict {
+        case .identical:
+            return "L0 · exact"
+        case .formattingOnly(let level, let count):
+            let sites = count == 1 ? "1 site" : "\(count) sites"
+            switch level {
+            case .exact:
+                return "L0 · exact"
+            case .encoding:
+                return "L1 · encoding only · \(sites)"
+            case .spacing:
+                return "L2 · spacing only · \(sites)"
+            case .layout:
+                return "L3 · layout only · \(sites)"
+            }
+        case .changed(_, let formattingOnly):
+            guard formattingOnly > 0 else { return nil }
+            return formattingOnly == 1 ? "1 formatting site" : "\(formattingOnly) formatting sites"
+        }
+    }
+
     static func contentChangeCount(_ verdict: Verdict) -> Int {
         if case .changed(let contentChanges, _) = verdict {
             return contentChanges
@@ -59,10 +88,12 @@ enum VerdictText {
     }
 }
 
-/// the identity moment of the app (sdd §7.1): one serif sentence set large,
-/// with the quiet secondary line beneath. long-press copies the sentence, tap
-/// jumps to the first content change, tapping the secondary line reveals the
-/// formatting-only sites dimmed in place (sdd §3.4, fr-10)
+/// the result statement (sdd §7.1): one serif sentence at the principal size,
+/// unboxed and left aligned, with the compact mono notation beneath. long-press
+/// copies the canonical sentence, tap jumps to the first content change,
+/// tapping the notation line reveals the formatting-only sites dimmed in place
+/// (sdd §3.4, fr-10). voiceover hears the canonical sentences, never the
+/// compact notation
 struct VerdictBanner: View {
     let verdict: Verdict
     let revealActive: Bool
@@ -70,7 +101,7 @@ struct VerdictBanner: View {
     let onToggleReveal: () -> Void
 
     @State private var showsCopied = false
-    @ScaledMetric(relativeTo: .largeTitle) private var bannerSize: CGFloat = 32
+    @ScaledMetric(relativeTo: .title) private var verdictSize: CGFloat = 28
 
     private var canJump: Bool {
         VerdictText.contentChangeCount(verdict) > 0
@@ -82,9 +113,10 @@ struct VerdictBanner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(VerdictText.primary(verdict))
-                    .font(Theme.banner(bannerSize))
+                    .font(Theme.verdict(verdictSize))
+                    .foregroundStyle(Theme.ink)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         if canJump { onJumpToFirstChange() }
@@ -93,37 +125,39 @@ struct VerdictBanner: View {
                         copyVerdict()
                     }
                 if showsCopied {
-                    Label("Copied", systemImage: "checkmark")
-                        .font(.caption)
+                    Text("COPIED")
+                        .font(Theme.data)
                         .foregroundStyle(.secondary)
-                        .labelStyle(.titleAndIcon)
                 }
                 Spacer(minLength: 0)
             }
-            if let secondary = VerdictText.secondary(verdict) {
+            if let compact = VerdictText.compact(verdict) {
                 Button {
                     if canReveal { onToggleReveal() }
                 } label: {
-                    HStack(spacing: 5) {
-                        Text(secondary)
-                            .font(.subheadline)
-                            .fontDesign(.serif)
+                    HStack(spacing: 6) {
+                        Text(compact)
+                            .font(Theme.data)
                         if canReveal {
                             Image(systemName: revealActive ? "eye.fill" : "eye")
                                 .font(.caption2)
                         }
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(canReveal ? AnyShapeStyle(Theme.ink) : AnyShapeStyle(.secondary))
+                    .frame(minHeight: 32)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!canReveal)
+                .padding(.vertical, -4)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
         .accessibilityAddTraits(canJump ? .isButton : [])
         .accessibilityAction(named: "Copy verdict") { copyVerdict() }
-        .accessibilityAction(named: "Reveal formatting differences") {
+        .accessibilityAction(named: revealActive
+                             ? "Hide formatting differences" : "Reveal formatting differences") {
             if canReveal { onToggleReveal() }
         }
         .accessibilityAction(named: "Jump to first change") {
@@ -131,6 +165,7 @@ struct VerdictBanner: View {
         }
     }
 
+    /// canonical primary + secondary sentences (sdd §3.4), never the compact form
     private var accessibilityText: String {
         var text = VerdictText.primary(verdict)
         if let secondary = VerdictText.secondary(verdict) {
@@ -163,4 +198,5 @@ struct VerdictBanner: View {
                       onJumpToFirstChange: {}, onToggleReveal: {})
     }
     .padding()
+    .background(Theme.paper)
 }

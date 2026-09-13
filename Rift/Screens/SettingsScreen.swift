@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// viewer settings (fr-14): font size, monospaced toggle for the code view,
-/// light/dark/system, and the blue/orange accessible palette (nfr-5)
+/// light/dark/system, and the blue/orange accessible palette (nfr-5). a native
+/// form; the only serif on this screen is the labeled prose preview
 struct SettingsScreen: View {
     private var settings = ViewerSettings()
     @Environment(\.dismiss) private var dismiss
@@ -23,9 +24,21 @@ struct SettingsScreen: View {
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     }
-                    Text("The quick brown fox jumps over the lazy dog.")
-                        .font(.system(size: 17 * settings.fontScale, design: .serif))
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("PROSE PREVIEW")
+                            .font(Theme.label)
+                            .foregroundStyle(.secondary)
+                        Text("The quick brown fox jumps over the lazy dog.")
+                            .font(.system(size: 17 * settings.fontScale, design: .serif))
+                        Text("CODE PREVIEW")
+                            .font(Theme.label)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                        Text("let gap = measure(a, b)")
+                            .font(.system(size: 13 * settings.fontScale,
+                                          design: settings.codeMonospaced ? .monospaced : .default))
+                    }
+                    .padding(.vertical, 2)
                 } header: {
                     Text("Text size")
                 } footer: {
@@ -33,6 +46,7 @@ struct SettingsScreen: View {
                 }
                 Section("Code view") {
                     Toggle("Monospaced (SF Mono)", isOn: settings.$codeMonospaced)
+                        .tint(Theme.switchTint)
                 }
                 Section {
                     Picker("Appearance", selection: settings.$appearance) {
@@ -42,14 +56,13 @@ struct SettingsScreen: View {
                     }
                     .pickerStyle(.segmented)
                     Toggle("Blue / orange palette", isOn: settings.$accessiblePalette)
+                        .tint(Theme.switchTint)
                 } header: {
                     Text("Appearance")
                 } footer: {
-                    Text("The blue / orange palette replaces green and red for red–green color-vision deficiency. Glyphs, underline, and strikethrough always accompany color.")
+                    Text("Blue / orange replaces green and red for red–green color-vision deficiency. Glyphs, underline, and strikethrough always accompany color.")
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Theme.paper)
             .navigationTitle("Viewing")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -58,6 +71,7 @@ struct SettingsScreen: View {
                 }
             }
         }
+        .tint(Theme.accent)
     }
 }
 

@@ -21,8 +21,11 @@ extension StrictnessLevel {
     }
 }
 
-/// the "show your work" view (sdd §7.2): four rows, one per ladder level —
-/// equal or not at that level, and how many sites resolve exactly there
+/// the "show your work" view (sdd §7.2) as a compact analytical table: one
+/// row per ladder level — level, name, `=` / `≠` at that level, and the number
+/// of sites resolved exactly there. convergence is marked by weight and a
+/// one-point rule above the first equal row, never by helper text; the sites
+/// column is explained once by the caller's footer
 struct LadderView: View {
     let ladder: [LadderLevelResult]
 
@@ -31,52 +34,75 @@ struct LadderView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 0) {
             ForEach(Array(ladder.enumerated()), id: \.offset) { index, row in
-                ladderRow(row)
-                if index < ladder.count - 1 {
-                    Divider().overlay(Theme.hairline)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder
-    private func ladderRow(_ row: LadderLevelResult) -> some View {
-        let isConvergence = row.level == convergence
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(row.level.label)
-                .font(.footnote.weight(.semibold).monospaced())
-                .foregroundStyle(isConvergence ? Color.accentColor : Color.secondary)
-                .frame(width: 26, alignment: .leading)
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(row.level.displayName)
-                        .font(.subheadline.weight(isConvergence ? .semibold : .regular))
-                        .fontDesign(.serif)
-                    if isConvergence {
-                        Text("converges here")
-                            .font(.caption2)
-                            .foregroundStyle(Color.accentColor)
+                if index > 0 {
+                    if row.level == convergence {
+                        RuleLine(weight: .rule)
+                    } else {
+                        RuleLine()
                     }
                 }
-                Text(row.level.ruleSummary)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                ladderRow(row)
             }
-            Spacer(minLength: 8)
-            if row.resolvedSiteCount > 0 {
-                Text("\(row.resolvedSiteCount) set aside")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Image(systemName: row.isEqual ? "checkmark.circle.fill" : "xmark.circle")
-                .font(.subheadline)
-                .foregroundStyle(row.isEqual ? Color.accentColor : Color.secondary.opacity(0.6))
-                .accessibilityLabel(row.isEqual ? "equal at this level" : "still different")
         }
-        .padding(.vertical, 8)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Strictness ladder")
     }
+
+    /// modifiers sit on the cells, never on the GridRow, so the grid keeps
+    /// treating it as a row; voiceover reads the whole row from its first cell
+    private func ladderRow(_ row: LadderLevelResult) -> some View {
+        let isConvergence = row.level == convergence
+        let weight: Font.Weight = isConvergence ? .semibold : .regular
+        let hasSites = row.resolvedSiteCount > 0
+        return GridRow {
+            Text(row.level.label)
+                .font(Theme.data.weight(weight))
+                .foregroundStyle(isConvergence ? Theme.ink : Color.secondary)
+                .padding(.vertical, 9)
+                .accessibilityLabel(accessibilityDescription(row, isConvergence: isConvergence))
+            Text(row.level.displayName.uppercased())
+                .font(Theme.data.weight(weight))
+                .foregroundStyle(isConvergence ? Theme.ink : Color.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 9)
+                .accessibilityHidden(true)
+            Text(row.isEqual ? "=" : "≠")
+                .font(Theme.data.weight(.semibold))
+                .foregroundStyle(row.isEqual ? Theme.ink : Color.secondary)
+                .padding(.vertical, 9)
+                .gridColumnAlignment(.center)
+                .accessibilityHidden(true)
+            Text(hasSites ? "\(row.resolvedSiteCount)" : "—")
+                .font(Theme.data.weight(weight))
+                .foregroundStyle(hasSites ? Theme.ink : Color.secondary)
+                .frame(minWidth: 24, alignment: .trailing)
+                .padding(.vertical, 9)
+                .gridColumnAlignment(.trailing)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func accessibilityDescription(_ row: LadderLevelResult, isConvergence: Bool) -> String {
+        var text = "\(row.level.label), \(row.level.displayName): "
+        text += row.isEqual ? "equal at this level" : "still different"
+        if isConvergence {
+            text += ", converges here"
+        }
+        if row.resolvedSiteCount > 0 {
+            text += ", \(row.resolvedSiteCount) \(row.resolvedSiteCount == 1 ? "site" : "sites") resolved at this level"
+        }
+        return text
+    }
+}
+
+#Preview {
+    LadderView(ladder: [
+        LadderLevelResult(level: .exact, isEqual: false, resolvedSiteCount: 0),
+        LadderLevelResult(level: .encoding, isEqual: false, resolvedSiteCount: 2),
+        LadderLevelResult(level: .spacing, isEqual: true, resolvedSiteCount: 3),
+        LadderLevelResult(level: .layout, isEqual: true, resolvedSiteCount: 0),
+    ])
+    .padding()
 }

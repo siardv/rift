@@ -2,8 +2,9 @@ import RiftEngine
 import SwiftUI
 
 /// the progressive-disclosure home (sdd §7.2): mode control, profile
-/// explanation, the ladder readout, the formatting-site list (fr-10), and —
-/// in custom mode only — the individual rule toggles (fr-5)
+/// explanation, the ladder table, the formatting-site list (fr-10), and — in
+/// custom mode only — the individual rule toggles (fr-5). a native grouped
+/// list; only the type roles and the ladder grammar are rift's
 struct InspectorSheet: View {
     @Bindable var session: CompareSession
     @Environment(\.dismiss) private var dismiss
@@ -17,14 +18,10 @@ struct InspectorSheet: View {
                 }
                 if let report = session.report {
                     profileSection(report)
-                    Section("Strictness ladder") {
-                        LadderView(ladder: report.ladder)
-                    }
+                    ladderSection(report)
                     sitesSection
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Theme.paper)
             .navigationTitle("Inspector")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -33,6 +30,7 @@ struct InspectorSheet: View {
                 }
             }
         }
+        .tint(Theme.accent)
     }
 
     // MARK: - mode (fr-5)
@@ -56,11 +54,11 @@ struct InspectorSheet: View {
     private var modeExplanation: String {
         switch session.modeChoice {
         case .smart:
-            return "The full strictness ladder decides automatically. Everything set aside stays counted and revealable."
+            return "Evaluates L0–L3; excluded differences remain inspectable."
         case .strict:
-            return "L0 only: every byte difference is shown, nothing is set aside."
+            return "Exact comparison; every difference is shown."
         case .custom:
-            return "The ladder runs with your rule choices below."
+            return "Uses the rules selected below."
         }
     }
 
@@ -69,9 +67,9 @@ struct InspectorSheet: View {
     private func profileSection(_ report: DiffReport) -> some View {
         Section("Profile") {
             HStack {
-                Text("\(report.profile.profile.rawValue.capitalized) · \(report.profile.isAutomatic ? "auto" : "manual")")
-                    .font(.subheadline)
-                    .fontDesign(.serif)
+                Text("\(report.profile.profile.rawValue.uppercased()) / \(report.profile.isAutomatic ? "AUTO" : "MANUAL")")
+                    .font(Theme.label)
+                    .accessibilityLabel("Content profile: \(report.profile.profile.rawValue), \(report.profile.isAutomatic ? "detected automatically" : "manual override")")
                 Spacer()
                 Picker("Override", selection: $session.profileOverride) {
                     Text("Automatic").tag(Profile?.none)
@@ -81,16 +79,35 @@ struct InspectorSheet: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
+                .accessibilityLabel("Profile override")
             }
             Text(report.profile.explanation)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if report.profile.isAutomatic {
+                Text("CONFIDENCE \(Int((report.profile.confidence * 100).rounded())) %")
+                    .font(Theme.data)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Confidence \(Int((report.profile.confidence * 100).rounded())) percent")
+            }
             if report.profile.isIndentationSensitive {
                 Label("Indentation looks meaning-bearing; layout rules keep it significant.",
                       systemImage: "increase.indent")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    // MARK: - ladder (sdd §3.2, §7.2)
+
+    private func ladderSection(_ report: DiffReport) -> some View {
+        Section {
+            LadderView(ladder: report.ladder)
+        } header: {
+            Text("Strictness ladder")
+        } footer: {
+            Text("= equal at that level, ≠ still different; the last column counts formatting-only sites resolved exactly there. L1 line endings, NFC, invisibles, trailing space · L2 space runs, blank lines, NBSP, typography · L3 wrapping (prose) / indentation (code).")
         }
     }
 
@@ -112,34 +129,32 @@ struct InspectorSheet: View {
             Text("Formatting-only sites (\(sites.count))")
         } footer: {
             if !sites.isEmpty {
-                Text("Each site shows the raw bytes on both sides (· space, ¶ newline, ⇥ tab, ⍽ NBSP). Tapping the verdict's secondary line dims them in place.")
+                Text("Raw bytes on both sides, in document order: · space, ¶ newline, ⇥ tab, ⍽ NBSP, ␍ CR, ◦ invisible. The result's notation line reveals sites in place.")
             }
         }
     }
 
     private func siteRow(_ site: SiteDisplay) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(site.level.label)
-                .font(.caption.monospaced().weight(.semibold))
+                .font(Theme.data.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.hairline, lineWidth: 0.5))
+                .frame(minWidth: 24, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Text(site.excerptA)
                         .font(.caption.monospaced())
                         .lineLimit(1)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.tertiary)
+                    Text("→")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(site.excerptB)
                         .font(.caption.monospaced())
                         .lineLimit(1)
                 }
                 Text(site.level.displayName.lowercased())
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
@@ -152,29 +167,36 @@ struct InspectorSheet: View {
     @ViewBuilder
     private var ruleSections: some View {
         Section("L1 · Encoding rules") {
-            Toggle("Unicode normalization (NFC)", isOn: $session.customRules.unicodeNFC)
-            Toggle("Ignore invisible characters", isOn: $session.customRules.stripInvisibles)
-            Toggle("Ignore trailing whitespace", isOn: $session.customRules.stripTrailingWhitespace)
+            ruleToggle("Unicode normalization (NFC)", isOn: $session.customRules.unicodeNFC)
+            ruleToggle("Ignore invisible characters", isOn: $session.customRules.stripInvisibles)
+            ruleToggle("Ignore trailing whitespace", isOn: $session.customRules.stripTrailingWhitespace)
         }
         Section("L2 · Spacing rules") {
-            Toggle("Collapse space runs", isOn: $session.customRules.collapseSpaceRuns)
-            Toggle("Collapse blank-line runs", isOn: $session.customRules.collapseBlankLines)
-            Toggle("Trim outer blank lines", isOn: $session.customRules.trimOuterBlankLines)
-            Toggle("Treat NBSP as space", isOn: $session.customRules.nbspToSpace)
-            Toggle("Typographic equivalence (prose)", isOn: $session.customRules.typographicEquivalence)
+            ruleToggle("Collapse space runs", isOn: $session.customRules.collapseSpaceRuns)
+            ruleToggle("Collapse blank-line runs", isOn: $session.customRules.collapseBlankLines)
+            ruleToggle("Trim outer blank lines", isOn: $session.customRules.trimOuterBlankLines)
+            ruleToggle("Treat NBSP as space", isOn: $session.customRules.nbspToSpace)
+            ruleToggle("Typographic equivalence (prose)", isOn: $session.customRules.typographicEquivalence)
         }
         Section("L3 · Layout rules") {
-            Toggle("Reflow prose paragraphs", isOn: $session.customRules.reflowProse)
-            Toggle("Ignore indentation (code)", isOn: $session.customRules.ignoreIndentation)
-            Toggle("Ignore blank lines entirely (code)", isOn: $session.customRules.ignoreBlankLinesEntirely)
+            ruleToggle("Reflow prose paragraphs", isOn: $session.customRules.reflowProse)
+            ruleToggle("Ignore indentation (code)", isOn: $session.customRules.ignoreIndentation)
+            ruleToggle("Ignore blank lines entirely (code)", isOn: $session.customRules.ignoreBlankLinesEntirely)
         }
         Section {
-            Toggle("Ignore case", isOn: $session.customRules.ignoreCase)
-            Toggle("Ignore punctuation", isOn: $session.customRules.ignorePunctuation)
+            ruleToggle("Ignore case", isOn: $session.customRules.ignoreCase)
+            ruleToggle("Ignore punctuation", isOn: $session.customRules.ignorePunctuation)
         } header: {
             Text("Meaning-changing")
         } footer: {
             Text("These change meaning rather than layout, so they never join the automatic ladder. Off by default.")
         }
+    }
+
+    /// switches take the charcoal-led tint whose dark variant keeps the knob
+    /// legible (sdd §7.1)
+    private func ruleToggle(_ title: String, isOn: Binding<Bool>) -> some View {
+        Toggle(title, isOn: isOn)
+            .tint(Theme.switchTint)
     }
 }

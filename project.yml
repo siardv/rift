@@ -26,12 +26,14 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.siardv.rift
         PRODUCT_NAME: Rift
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: true
         INFOPLIST_KEY_CFBundleDisplayName: Rift
         INFOPLIST_KEY_UILaunchScreen_Generation: true
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: 1
         TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
   RiftTests:
     type: bundle.unit-test
     platform: iOS

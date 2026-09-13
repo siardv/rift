@@ -1,26 +1,62 @@
 import SwiftUI
 import UIKit
 
-/// design tokens for the "academic-clean" register (sdd §7.1): paper-toned
-/// neutrals, serif display type, restrained accessible change colors, and the
-/// optional blue/orange palette for red-green color vision deficiency (nfr-5)
+/// design tokens for the "scholarly working instrument" register (sdd §7.1,
+/// m3): the icon's ivory workspace and charcoal ink, one-point rules and
+/// half-point hairlines instead of cards, low radii, no authored shadows, and
+/// three strictly limited type roles (serif, sans, mono). the accessible change
+/// colors and their non-color markings are unchanged from m2 (nfr-5)
 enum Theme {
-    // MARK: - grounds
+    // MARK: - identity colors (match the supplied icon exactly)
 
-    /// warm off-white light / near-black warm dark
-    static let paper: Color = dynamic(
-        light: UIColor(red: 0.980, green: 0.973, blue: 0.960, alpha: 1),
-        dark: UIColor(red: 0.086, green: 0.084, blue: 0.078, alpha: 1))
+    /// warm ivory #F5F1E7
+    private static var ivory: UIColor { UIColor(red: 0.961, green: 0.945, blue: 0.906, alpha: 1) }
+    /// deep charcoal #1F1E1C
+    private static var charcoal: UIColor { UIColor(red: 0.122, green: 0.118, blue: 0.110, alpha: 1) }
 
-    /// input cards and sheets sit barely off the paper
-    static let card: Color = dynamic(
-        light: UIColor(red: 0.955, green: 0.947, blue: 0.930, alpha: 1),
-        dark: UIColor(red: 0.135, green: 0.132, blue: 0.124, alpha: 1))
+    // MARK: - grounds and ink
 
-    static let hairline: Color = Color.primary.opacity(0.14)
+    /// the workspace: ivory in light, charcoal in dark
+    static let paper: Color = dynamic(light: ivory, dark: charcoal)
+
+    /// primary ink and structural rules: charcoal on ivory, ivory on charcoal
+    static let ink: Color = dynamic(light: charcoal, dark: ivory)
+
+    /// one-point rule where regions genuinely differ (pane top edge, result /
+    /// evidence boundary, ladder convergence, navigator edge)
+    static let rule: Color = ink
+
+    /// half-point hairline for secondary subdivisions (row separators,
+    /// side-by-side gutters, quiet pane bottom edges)
+    static let hairline: Color = Color.primary.opacity(0.22)
+
+    /// faint fill marking an absent line in a side-by-side pair; a placeholder,
+    /// not a hierarchy device
+    static let absentFill: Color = Color.primary.opacity(0.05)
+
+    /// neutral interaction tint: charcoal-led instead of system blue. dark mode
+    /// inverts to ivory so buttons and links read as ink
+    static let accent: Color = dynamic(light: charcoal, dark: ivory)
+
+    /// switch tracks: charcoal in light; a mid warm grey in dark so the white
+    /// knob stays legible against the track (an ivory track would swallow it)
+    static let switchTint: Color = dynamic(
+        light: charcoal,
+        dark: UIColor(red: 0.561, green: 0.541, blue: 0.502, alpha: 1))
+
+    /// the native PasteButton fills with its tint and labels in white, so dark
+    /// mode needs a fill dark enough for that label yet distinct from the ground
+    static let pasteTint: Color = dynamic(
+        light: charcoal,
+        dark: UIColor(red: 0.431, green: 0.412, blue: 0.373, alpha: 1))
 
     /// formatting-only ink: dimmed to ~40 % with a dotted underline (sdd §7.1)
     static let formattingOpacity: Double = 0.4
+
+    // MARK: - shape
+
+    /// the only custom radius in the app; native controls keep system shapes
+    static let fieldRadius: CGFloat = 4
 
     // MARK: - change colors (nfr-5: aa contrast, color never the sole channel)
 
@@ -56,16 +92,27 @@ enum Theme {
                       dark: UIColor(red: 0.94, green: 0.52, blue: 0.50, alpha: 0.20))
     }
 
-    // MARK: - type
+    // MARK: - type roles (sdd §7.1)
 
     /// base sizes; views scale these by dynamic type (@ScaledMetric) and the
     /// fr-14 font-size setting
     static let proseBaseSize: CGFloat = 17
     static let codeBaseSize: CGFloat = 13
 
-    static func banner(_ size: CGFloat) -> Font {
+    /// serif role 1 of 2: the principal verdict sentence (role 2 is flowing
+    /// prose result text, set in ProseDiffView)
+    static func verdict(_ size: CGFloat) -> Font {
         .system(size: size, weight: .semibold, design: .serif)
     }
+
+    /// mono eyebrow / structural label: `RESULT`, `A / ORIGINAL`, `PROSE / AUTO`
+    static var label: Font { .caption.weight(.semibold).monospaced() }
+
+    /// mono analytical metadata: counts, `L0–L3`, compact result notation
+    static var data: Font { .caption.monospaced() }
+
+    /// smaller mono metadata: pane counts, decoded-as badge
+    static var dataSmall: Font { .caption2.monospaced() }
 
     // MARK: - helpers
 

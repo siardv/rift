@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Project | Rift — a content-aware diff app for iOS |
-| Document | Software Design Document (SDD), v0.1, draft for implementation |
-| Date | 2026-08-30 |
+| Document | Software Design Document (SDD), v0.2 — §7 revised to the shipped M3 visual system |
+| Date | 2026-08-30; §7 and §12–13 revised 2026-09-08 |
 | Owner | Siard van den Bosch |
 | License | MIT (decided 2026-08-30) |
 | Platform | iPhone + iPad, iOS 17.0+, SwiftUI, Swift 6 (built with Xcode 26.x) |
@@ -35,7 +35,7 @@ The name is the product metaphor: the *rift* is the genuine gap between two text
 | G-4 | The diff engine is a pure, platform-independent Swift package that can later power a macOS app, a share extension, Shortcuts actions, and a CLI without modification. |
 | G-5 | Shippable v1.0 in roughly four focused days; every later feature slots into an existing extension point rather than forcing refactors. |
 | G-6 | Fully open source (MIT), fully offline, no accounts, no analytics, no network access at all. |
-| G-7 | Visual design that is clean and modern with a quiet academic register: serif display type, restrained color, typographic care. |
+| G-7 | Visual design that is clean and modern with a quiet academic register: a scholarly working instrument — ivory workspace, charcoal ink, rule-led structure, serif reserved for the verdict and for prose, restrained color, typographic care. |
 
 ### 1.4 Non-goals (v1.0)
 
@@ -150,6 +150,8 @@ The verdict is a total function of (convergence level, change counts):
 
 The formatting count *m* is computed by comparing raw slices (via the provenance map, §6.3) inside regions the content diff says are equal — so nothing ignored is ever unaccounted for. Tapping the secondary line reveals the formatting differences dimmed in place; tapping the banner jumps to the first content change.
 
+These sentences are canonical: VoiceOver, the long-press copy action, and the exported summary always use them (`VerdictText.primary` / `VerdictText.secondary`). Since M3 the *visual* secondary line renders a compact notation instead — `L0 · exact`, `L2 · spacing only · 3 sites`, `5 formatting sites` (`VerdictText.compact`, display-only, nil exactly when the canonical secondary is nil). The compact form is a presentation variant of the same total function; it never replaces the canonical sentences where they are spoken, copied, or exported (§7.1).
+
 ### 3.5 Worked examples
 
 **Reflow (the founding use case).** A: `The quick brown fox\njumps over the lazy dog.` B: `The quick brown fox jumps over the lazy dog.` — Line-based tools show one deleted and two inserted lines (or a changed pair). Rift: prose profile, converges at L3 → *"Same content. Differ only in layout — 1 place."*
@@ -180,7 +182,7 @@ MVP = must ship in 1.0. Later = designed-for now, built later (§15).
 | FR-10 | Reveal formatting-only differences on demand (dimmed in place + list in inspector), per §3.4 | MVP |
 | FR-11 | Swap sides; clear side; character/line/word count per side | MVP |
 | FR-12 | Share/export: plain-text summary (verdict + changes) and unified `.patch` file via share sheet; copy any change's before/after | MVP |
-| FR-13 | Sample pair on the empty state ("Try an example") so the first-run experience and App Review need no source material | MVP |
+| FR-13 | Sample pair on the empty state (**Load sample**, named "Try an example" in M2) so the first-run experience and App Review need no source material | MVP |
 | FR-14 | Viewer settings: font size, monospaced toggle for code view, light/dark/system, accessible palette toggle | MVP |
 | FR-15 | Persist last inputs and settings across launches (local only); "recent comparisons" history | Later (1.x) |
 | FR-16 | Share-sheet extension ("Send to Rift" fills A, then B) | Later (1.1) |
@@ -335,44 +337,59 @@ Detection O(1); normalization O(n) per level; ladder O(n); alignment O((N+M)·D)
 
 ## 7. UI/UX specification
 
-### 7.1 Design language — "academic-clean"
+**Revision note.** M2 (commit `e14d1e6`, 2026-09-04) shipped the complete functional UI described in §4.1 and §7.2–7.6 in an "academic-clean" register that combined a warm off-white workspace with a second cream card layer, serif type on branding, labels, controls and helper prose, rounded rectangles, capsules, half-point borders, low-contrast fills, a floating shadowed navigator, centered slogan-like empty and About states, and reassuring explanatory copy. M3 (2026-09-08) is a subtractive visual refinement of that baseline — a restyle, not a rebuild. Every behavior and data semantic of M2 (input, comparison, verdict, ladder, sites, diff views, navigation, copy, undo, export, settings, haptic, accessibility) is unchanged; §7.1–7.6 below describe the visual system as it now ships. The engine and the architecture sections of this document are untouched by M3.
 
-The register the app should evoke: a well-set journal article, not a terminal. Concretely:
+### 7.1 Design language — "scholarly working instrument"
+
+The register the app should evoke: a well-set working instrument for measuring the gap between two texts — not a terminal, and not a gentle assistant. The supplied app icon (§7.7) is the guide: ivory is the quiet workspace; charcoal supplies firm structure; the mark's organic half corresponds to readable prose, its hard diagonal to rules, notation and measurement; negative space does the work that nested cards used to do.
 
 | Token | Choice |
 |---|---|
-| Display type | New York (system serif) for the wordmark, verdict banner, and section labels — `.fontDesign(.serif)` |
-| Body/UI type | SF Pro; SF Mono only inside the code diff view |
-| Ground | paper-toned neutrals (subtle warm off-white light / near-black dark), hairline separators, generous margins; no cards-on-cards, no gradients |
-| Insertion | accessible green (tint + underline + "+" gutter glyph) |
-| Deletion | accessible red (tint + strikethrough + "−" gutter glyph) |
-| Formatting-only | dimmed ink at ~40 % with a dotted underline — visibly *other* than content changes |
-| Alternate palette | blue/orange variant (settings toggle) for red-green color vision deficiency |
-| Motion | none beyond system transitions; a single subtle haptic when a comparison completes with content changes |
+| Ground | `Theme.paper`: icon ivory `#F5F1E7` in light mode, icon charcoal `#1F1E1C` in dark mode. One layer only — there is no second card color on the main screen; input regions are transparent and defined by rules |
+| Ink | `Theme.ink`: charcoal `#1F1E1C` on ivory, ivory on charcoal. Primary text, structural rules, the verdict |
+| Neutral interaction | `Theme.accent`: charcoal-led (charcoal in light, ivory in dark) for buttons, links, toolbar items and menus instead of system blue. Two deliberate exceptions where native control behavior needs a darker fill: switch tracks (`Theme.switchTint`, a mid warm grey in dark mode so the white knob stays legible) and the native `PasteButton` (`Theme.pasteTint`, dark enough in dark mode for its white label) |
+| Rules | `RuleLine(weight: .rule)`: a one-point ink rule where regions genuinely differ — the top edge of each input well, the boundary between the result statement and its evidence, the ladder's convergence line, the navigator's edge. `RuleLine()`: a half-point hairline (`Theme.hairline`, primary at 22 %) for secondary subdivisions — row separators, side-by-side gutters, the quiet bottom edge of a well |
+| Shape | `Theme.fieldRadius` = 4 pt is the only custom radius (drop-target outline, decoded-as badge, `PasteButton` border). No Rift-authored shadows, gradients, materials, glass, glows or textures anywhere. No `Capsule()` backgrounds, `.buttonBorderShape(.capsule)` or pill containers in the comparison content. Native sheets, menus, segmented controls, the `PasteButton` and OS-rendered toolbar presentations keep their system-provided shapes; on iOS 26 the toolbar's Liquid Glass grouping is the system's, not Rift's, and is not fought with appearance overrides |
+| Serif | New York (`.system(design: .serif)`) has exactly two production roles: the principal verdict sentence (`Theme.verdict`, ~28 pt semibold, scaled with Dynamic Type) and flowing prose result text (`ProseDiffView`). It appears in Settings only inside the clearly labeled *prose preview*. Never on navigation furniture, buttons, labels, helper copy or About |
+| Sans | SF Pro for the navigation title, helper and explanatory copy, alerts, Settings, About, and textual actions (`Paste`, `File`, `Clear`, `Load sample`, `Undo clear`, `Copy A / Copy B / Copy both`) |
+| Mono | SF Mono (`Theme.label`, `Theme.data`, `Theme.dataSmall`) for analytical metadata: the `RESULT` eyebrow, pane labels `A / ORIGINAL` / `B / REVISION`, counts (`1,248 CHAR · 216 WORD · 38 LINE`), `L0–L3`, the compact result notation, `PROSE / AUTO ▾`, `UNIFIED ▾`, confidence, line numbers, the `n / k` counter, and the strictness-ladder table |
+| Hierarchy | Position, size, weight, alignment and rules carry hierarchy; `.secondary` is used for genuinely secondary text, `.tertiary` and `.quaternary` are not used for anything informational |
+| Insertion | accessible green (tint + wash + underline + "+" gutter glyph) — unchanged from M2 |
+| Deletion | accessible red (tint + wash + strikethrough + "−" gutter glyph) — unchanged from M2 |
+| Formatting-only | dimmed ink at ~40 % with a dotted underline when revealed — unchanged from M2 |
+| Alternate palette | blue/orange variant (Settings toggle) for red-green color vision deficiency — unchanged from M2; red/green and blue/orange remain strictly semantic and are never used for neutral interaction |
+| Motion | none beyond system transitions and the two-point progress slide; one subtle haptic when a comparison first enters the has-content-changes state (not on every debounced completion) |
+| Copy tone | concise labels and factual statements (`No text`, `Waiting for revision`, `Add an original and a revision.`, `Local-only text comparison. No accounts, analytics, or network access.`); warmth lives in the product idea, not in coaching language. Established concepts keep their names: Smart, Strict, Custom, profile, formatting site, strictness ladder |
 
-The verdict banner is the identity moment of the app: one serif sentence, set large, e.g. **"Same content."** with the quiet secondary line beneath. It should feel like a finding, not a status bar.
+The verdict remains the identity moment of the app, now as a statement rather than a banner: a small mono eyebrow `RESULT`, the serif sentence (e.g. **"Same content."**) unboxed and left aligned, the compact mono notation beneath it, inline metadata, and a one-point rule before the evidence. It should read like a finding in a set table, not like a status bar.
 
 ### 7.2 Screen inventory and flow
 
-One main screen; sheets for depth. Compare screen, top to bottom: (1) two compact input panes ("A", "B") as collapsed cards showing the first lines + counts once filled, each with Paste / Files / Clear and an editor on tap; (2) the verdict banner; (3) the result view. A trailing toolbar holds Swap, view-mode toggle (unified ⇄ side-by-side), the profile chip, and the Inspector button. Landscape and iPad ("regular width") place A and B panes side by side and default the result to two-pane.
+One main screen; sheets for depth. Compare screen, top to bottom: (1) two input wells (`PaneCard`, "A / ORIGINAL", "B / REVISION") — transparent fields on the workspace with a one-point top rule and a hairline bottom rule, showing the first lines and compact counts once filled, each with the native `PasteButton` (title only), textual `File` and `Clear` actions with 44-point hit areas, tap-to-edit, and drag & drop; (2) the result header — `RESULT` eyebrow with the unified / side-by-side selection (a native menu, `UNIFIED ▾`, shown only when a diff view exists), the verdict statement, the compact notation line (the formatting-reveal toggle), the inline metadata line (`PROSE / AUTO ▾` opening the detector explanation, confidence and profile override; `INDENTATION SIGNIFICANT` when applicable; `Undo clear` after a clear), any degradation notice, and the one-point rule; (3) the result view. The navigation title is the plain sans word **Rift**. The top toolbar holds only global actions: Swap, Inspector, and More (share summary, export `.patch`, viewing options, About). The Inspector button is present in every state — empty, one-sided, comparing, completed — because the Inspector holds comparison configuration. Landscape and iPad ("regular width") place A and B side by side and default the result to two-pane.
 
-The **Inspector sheet** is the progressive-disclosure home: mode control (Smart / Strict / Custom), the profile chip with the detector's one-line explanation, the **ladder readout** — a four-row visualization showing at which level the texts converge and how many differences each level resolved (this is the app's "show your work" view) — and, in Custom mode only, the individual rule toggles (the CodeDiff+ feature set, plus ignore-case, ignore-punctuation).
+The **Inspector sheet** is the progressive-disclosure home, presented as a native grouped list: mode control (Smart / Strict / Custom) with a one-line explanation (Smart: "Evaluates L0–L3; excluded differences remain inspectable." Strict: "Exact comparison; every difference is shown." Custom: "Uses the rules selected below."), the profile (`PROSE / AUTO`, explanation, `CONFIDENCE 82 %`, indentation note, override picker), the **strictness ladder** as a compact analytical table — `L0 EXACT ≠`, `L1 ENCODING ≠ 2`, `L2 SPACING = 3`, `L3 LAYOUT = —` — with aligned mono columns, `=` / `≠` in place of checkmark circles, convergence marked by weight and a one-point rule above the first equal row rather than by helper text, and the sites column explained once in the section footer together with the per-level rule summary; the formatting-site list (fr-10) in document order with level, raw excerpts and visible-invisibles symbols; and, in Custom mode only, the individual rule toggles (the CodeDiff+ feature set plus ignore-case and ignore-punctuation, the latter two in their own "Meaning-changing" section). VoiceOver reads each ladder row in full ("L2, Spacing: equal at this level, converges here, 3 sites resolved at this level").
+
+The **Settings sheet** ("Viewing") is a native form: text-size slider with labeled `PROSE PREVIEW` (the one serif on the sheet) and `CODE PREVIEW`, the monospaced toggle, appearance, and the blue/orange palette. **About** shows the app icon, then a left-aligned factual hierarchy in sans and mono: name, `VERSION 0.1.0 (1)`, "Local-only text comparison. No accounts, analytics, or network access.", `SOURCE github.com/siardv/rift`, `LICENSE MIT · © 2026 Siard van den Bosch`, separated by rules.
 
 ### 7.3 States
 
-Empty (both panes blank): a one-line promise ("Paste two texts. Rift tells you what actually changed.") plus **Try an example**. One side filled: quiet hint on the other pane. Comparing (>150 ms): thin indeterminate bar under the banner area; previous result stays visible, dimmed. Oversized/binary/encoding issues: inline notices per §6.1/NFR-2. Identical: the full-width "Identical." banner *is* the result — no empty diff view pretending to have content.
+Empty (both wells blank): each well reads `No text`; beneath the wells a left-aligned instruction, "Add an original and a revision.", with the plain textual action **Load sample** (fr-13) — no centered slogan. One side filled: the empty well reads `Add original` (A) or `Waiting for revision` (B). Comparing (>150 ms): a thin two-point slide under the wells; the previous result stays visible, dimmed. Oversized/binary/encoding issues: inline notices per §6.1/NFR-2 ("Large input: detail reduced to whole paragraphs and lines.", "Input exceeds the 4 MB cap: coarse comparison.", "Mostly rewritten: block-level result.") and the persistent `DECODED AS UTF-16` / `DECODED AS LATIN-1` badge on the well. Identical: the statement `Identical.` / `L0 · exact` *is* the result — no empty diff view pretending to have content, and no layout selection.
 
 ### 7.4 Result presentation
 
-**Prose:** unified reading view by default — paragraphs in serif, insertions and deletions inline (Track-Changes idiom), unchanged paragraphs collapsible to "⋯ 4 unchanged paragraphs" after the first screenful. **Code:** line grid in SF Mono with dual line-number gutters, +/− glyphs, word/char-level highlights within changed lines, unchanged runs collapsible with context (3 lines) — collapsing is what makes large files readable on a phone, and it is prior art validated by Kaleidoscope 6. Side-by-side mode uses synchronized scrolling; on iPhone portrait it remains available but not default. Change navigation (chevrons + "n of k") floats bottom-trailing; formatting-only sites appear only when revealed (FR-10), rendered in the dimmed style.
+**Prose:** unified reading view by default — paragraphs in serif, insertions and deletions inline (Track-Changes idiom); runs of more than three unchanged paragraphs collapse to their first and last paragraph around a hairline rule interrupted by the mono label `4 unchanged paragraphs` (tap to expand; `collapse unchanged` in the same grammar to fold again). **Code:** line grid in SF Mono (or sans when the toggle is off) with dual line-number gutters, +/− glyphs, word/char-level highlights within changed lines; unchanged runs of more than seven lines collapse to three lines of context on each side around the same interrupted rule (`12 unchanged lines`); an absent line in a side-by-side pair is marked by a faint 5 % fill, not a card. Side-by-side mode is one shared vertical scroll of paired rows, so the two columns are synchronized structurally; on iPhone portrait it remains available but not default. Change navigation is a rectangular bar in the bottom safe-area inset — a one-point top rule, `↑`, the mono counter `2 / 7`, `↓`, 44-point targets, disabled at the ends — replacing M2's floating shadowed capsule; formatting-only sites appear only when revealed (FR-10), rendered in the dimmed style. Result content is never boxed into cards.
 
 ### 7.5 Interaction details
 
-Tap a change: action row (copy A form, copy B form, copy both). Long-press the verdict: copies the verdict sentence — deliberately quotable. Every destructive action (Clear) is undoable via standard shake/three-finger undo rather than confirmation dialogs. All toggles apply live; the report recomputes with the debounce, so the inspector doubles as an exploratorium of the ladder.
+Tap a change: a plain divided action row bounded by hairlines — `Copy A │ Copy B │ Copy both` — with the same three outputs as M2 (prose copies return the displayed, reflowed representation; raw A→B bytes remain available through patch export). Long-press the verdict: copies the canonical verdict sentence — deliberately quotable; `COPIED` is confirmed inline. Tap the verdict: jumps to the first content change. Tap the notation line: toggles the formatting reveal. Every destructive action (Clear) is undoable via standard shake/three-finger undo and the visible `Undo clear` action rather than confirmation dialogs. All toggles apply live; the report recomputes with the debounce, so the inspector doubles as an exploratorium of the ladder.
 
 ### 7.6 Accessibility
 
-Per NFR-5. Specific commitments: VoiceOver order is verdict → changes → panes; each change is one accessibility element ("Change 2 of 7, replaced: colour, with: color"); Dynamic Type reflows both views (the code view switches to wrapped lines with hanging indents at accessibility sizes); all touch targets ≥ 44 pt; reduce-motion honored trivially (there is no motion).
+Per NFR-5. Specific commitments: VoiceOver order is verdict → changes → panes; the verdict element speaks the canonical sentences of §3.4 (never the compact notation) and exposes "Copy verdict", "Reveal / Hide formatting differences" and "Jump to first change" as actions; each change is one accessibility element ("Change 2 of 7, replaced: colour, with: color"); ladder rows, sites, counts, badges and metadata carry spoken labels that expand the mono abbreviations; Dynamic Type reflows both views and the ladder table (a `Grid`, so columns stay aligned at accessibility sizes); all Rift-authored primary touch targets — textual actions, navigator, expanders, copy row — are at least 44 pt; the two compact header controls lay out smaller than they hit (the inline metadata labels at 32 pt with a 44-pt hit area, the notation line at 24 pt with a 32-pt hit area, both far wider than 44 pt); color is never the sole channel (glyphs, underline, strikethrough); both palettes and both color schemes are supported; reduce-motion is honored trivially (there is no motion beyond the progress slide).
+
+### 7.7 App icon
+
+The icon is the supplied IVORY artwork: an opaque, full-bleed 1024 × 1024 RGB PNG, ivory `#F5F1E7` ground and charcoal `#1F1E1C` mark, with no pre-rounded corners, gradient, texture, transparency, border, inset tile, bevel or shadow. It lives once in the repository as `Rift/Assets.xcassets/AppIcon.appiconset/AppIcon1024.png` (universal iOS 1024 × 1024 source, `Contents.json` per Xcode's modern single-size format); `project.yml` sets `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon` on the Rift target and the asset compiler generates every iPhone and iPad rendition at build time. Dark and tinted appearance wells are intentionally absent so the system derives those appearances from the same silhouette. The About screen shows the compiled icon read back from the bundle (`CFBundleIcons`), clipped to the home-screen corner — the one place a radius above 4 pt appears, because it reproduces the system's icon mask rather than introducing a Rift shape. The master and the compatibility PNG set (20–1024 px) are kept outside the repository in the icon pack.
 
 ---
 
@@ -427,8 +444,8 @@ MIT `LICENSE` (decided; permissive and App-Store-safe — copyleft licenses have
 | Age rating | 4+ |
 | Privacy | "Data Not Collected"; privacy policy URL from §8 |
 | Export compliance | `ITSAppUsesNonExemptEncryption = NO` in Info.plist (no encryption beyond OS) — skips the per-build compliance question |
-| Screenshots | Required sets at submission time (currently 6.9″ iPhone; 13″ iPad because iPad is supported); shots: verdict banner hero, prose reading view, code view, inspector/ladder, dark mode |
-| Review notes | Point the reviewer at **Try an example** so the app demonstrates itself in one tap; state that the app is fully offline |
+| Screenshots | Required sets at submission time (currently 6.9″ iPhone; 13″ iPad because iPad is supported); shots: verdict statement hero, prose reading view, code view, inspector/ladder table, dark mode |
+| Review notes | Point the reviewer at **Load sample** so the app demonstrates itself in one tap; state that the app is fully offline |
 | Rejection risk | Main realistic risk is 4.2 minimal functionality for utility apps — mitigated by the sample content, polish level, and the genuinely novel ladder/verdict; no other guideline is in play (no accounts, no payments, no UGC, no network) |
 | Rollout | TestFlight internal build first (same binary), then submit; expect first review in 1–2 days |
 
@@ -443,7 +460,7 @@ Each milestone ends in a runnable, committable state; stop-anywhere is a feature
 | M0 — Skeleton | 0.5 day | repo, license, README stub, Xcode project + RiftEngine package, CI green, empty app runs on device | `swift test` passes on a trivial test in CI |
 | M1 — Engine | 1 day | models, normalization L1–L3 + provenance, detector, ladder, Myers alignment + refinement + pairing, classification, verdict; golden corpus (~20 cases) + property tests | corpus green on macOS + Linux |
 | M2 — UI | 1 day | CompareScreen, panes with paste/files, verdict banner, prose + code views, unified/side-by-side, navigation, inspector with ladder readout, settings, dark mode | end-to-end flow on device matches §7 |
-| M3 — Polish | 0.5 day | accessibility pass (VoiceOver, Dynamic Type, palettes), haptic, empty/sample states, app icon, performance check against NFR-1, export | NFR-5 spot checks pass; export files open correctly |
+| M3 — Polish | 0.5 day planned; scope expanded 2026-09-08 | IVORY app icon reconciled (§7.7); visual-system refinement of the M2 UI to the §7.1 grammar (ivory/charcoal, rules not cards, limited serif, mono metadata, compact verdict notation and ladder table, rectangular navigator, plain actions, factual copy); then the accessibility pass (VoiceOver, Dynamic Type, palettes), haptic feel check, performance check against NFR-1, export files opened in receiving apps | icon embedded for iPhone and iPad; §7.1 acceptance list met; NFR-5 spot checks pass; export files open correctly |
 | M4 — Ship | 0.5 day | screenshots, listing copy, privacy policy page, TestFlight, submit | build in review |
 
 Total: ~3.5 focused days, with M1 the only technically dense day. If time pressure hits, FR-12 export and the side-by-side code mode are the designated cuts — never the ladder, the verdict, or the prose view, which are the product.

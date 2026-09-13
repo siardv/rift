@@ -2,9 +2,11 @@ import RiftEngine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// the single main screen (sdd §7.2): input panes, verdict banner, result
-/// view, floating change navigation; inspector and settings live in sheets.
-/// the screen renders CompareSession state and never computes (sdd §1.5, §5.3)
+/// the single main screen (sdd §7.2): input wells, result header (eyebrow,
+/// verdict, compact notation, metadata, rule), result view, and a rectangular
+/// change navigator in the bottom safe-area inset; inspector and settings live
+/// in sheets. the screen renders CompareSession state and never computes
+/// (sdd §1.5, §5.3)
 struct CompareScreen: View {
     @State private var session = CompareSession()
     private var settings = ViewerSettings()
@@ -35,18 +37,34 @@ struct CompareScreen: View {
         presentationOverride ?? (isWide ? .sideBySide : .unified)
     }
 
+    /// the menu edits the override; the getter reports the effective layout so
+    /// the current choice is checked even before the user has overridden it
+    private var presentationBinding: Binding<DiffPresentation> {
+        let override = $presentationOverride
+        let fallback: DiffPresentation = isWide ? .sideBySide : .unified
+        return Binding(get: { override.wrappedValue ?? fallback },
+                       set: { override.wrappedValue = $0 })
+    }
+
     private var changeAnchors: [ChangeAnchor] {
         session.viewModel?.changes ?? []
+    }
+
+    /// a result view exists to lay out: a report that is not merely identical
+    private var hasResultContent: Bool {
+        guard let report = session.report else { return false }
+        if case .identical = report.verdict { return false }
+        return true
     }
 
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
-                ZStack(alignment: .bottomTrailing) {
-                    VStack(spacing: 0) {
-                        header(proxy: proxy)
-                        resultArea
-                    }
+                VStack(spacing: 0) {
+                    header(proxy: proxy)
+                    resultArea
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     if !changeAnchors.isEmpty, session.report != nil {
                         ChangeNavigator(
                             total: changeAnchors.count,
@@ -56,11 +74,17 @@ struct CompareScreen: View {
                     }
                 }
                 .background(Theme.paper.ignoresSafeArea())
+                .navigationTitle("Rift")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .toolbarBackground(Theme.paper, for: .navigationBar)
-                .navigationBarTitleDisplayMode(.inline)
             }
         }
+        // one ink for the whole workspace: text defaults to charcoal (ivory in
+        // dark) and `.secondary` derives from it; semantic diff colors and the
+        // accent are set explicitly where they apply
+        .foregroundStyle(Theme.ink)
+        .tint(Theme.accent)
         .preferredColorScheme(settings.appearance.colorScheme)
         .sheet(isPresented: $isInspectorPresented) {
             InspectorSheet(session: session)
@@ -94,7 +118,7 @@ struct CompareScreen: View {
         }
     }
 
-    // MARK: - header: panes, banner, chips, notices (sdd §7.3)
+    // MARK: - header: wells, result statement, metadata (sdd §7.3)
 
     @ViewBuilder
     private func header(proxy: ScrollViewProxy) -> some View {
@@ -105,90 +129,137 @@ struct CompareScreen: View {
                 ThinProgressBar()
             }
             if let report = session.report {
-                VerdictBanner(
-                    verdict: report.verdict,
-                    revealActive: session.revealFormatting,
-                    onJumpToFirstChange: { jump(to: 1, proxy: proxy) },
-                    onToggleReveal: { session.revealFormatting.toggle() })
-                    .accessibilitySortPriority(3)
-                chipRow(report)
-                if report.document.isDegraded, let reason = report.document.degradationReason {
-                    degradationNotice(reason)
-                }
+                resultHeader(report, proxy: proxy)
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 6)
-        .padding(.bottom, 8)
     }
 
     @ViewBuilder
     private var panes: some View {
-        let cardA = PaneCard(pane: .a, session: session,
+        let wellA = PaneCard(pane: .a, session: session,
                              hintEmphasized: session.textA.isEmpty && !session.textB.isEmpty,
                              onRequestImport: requestImport)
-        let cardB = PaneCard(pane: .b, session: session,
+        let wellB = PaneCard(pane: .b, session: session,
                              hintEmphasized: session.textB.isEmpty && !session.textA.isEmpty,
                              onRequestImport: requestImport)
         if isWide {
-            HStack(alignment: .top, spacing: 10) {
-                cardA
-                cardB
+            HStack(alignment: .top, spacing: 16) {
+                wellA
+                wellB
             }
         } else {
             VStack(spacing: 8) {
-                cardA
-                cardB
+                wellA
+                wellB
             }
         }
     }
 
-    private func chipRow(_ report: DiffReport) -> some View {
-        HStack(spacing: 8) {
+    /// eyebrow + layout selection, the verdict, inline metadata, then the
+    /// structural rule that separates the statement from its evidence
+    @ViewBuilder
+    private func resultHeader(_ report: DiffReport, proxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
+                Text("RESULT")
+                    .font(Theme.label)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 8)
+                if hasResultContent {
+                    layoutMenu
+                }
+            }
+            .frame(minHeight: 20)
+            VerdictBanner(
+                verdict: report.verdict,
+                revealActive: session.revealFormatting,
+                onJumpToFirstChange: { jump(to: 1, proxy: proxy) },
+                onToggleReveal: { session.revealFormatting.toggle() })
+                .accessibilitySortPriority(3)
+            metadataRow(report)
+            if report.document.isDegraded, let reason = report.document.degradationReason {
+                degradationNotice(reason)
+            }
+            RuleLine(weight: .rule)
+        }
+    }
+
+    /// unified / side-by-side selection lives beside the result it changes
+    /// (fr-7); a native menu, so its shape is the system's
+    private var layoutMenu: some View {
+        Menu {
+            Picker("Layout", selection: presentationBinding) {
+                Text("Unified").tag(DiffPresentation.unified)
+                Text("Side by side").tag(DiffPresentation.sideBySide)
+            }
+        } label: {
+            inlineMetadataLabel(presentation == .unified ? "UNIFIED" : "SIDE BY SIDE")
+        }
+        .accessibilityLabel("Layout: \(presentation == .unified ? "unified" : "side by side")")
+        .accessibilityHint("Chooses between unified and side-by-side result layouts")
+    }
+
+    /// `PROSE / AUTO ▾` opens the detector's explanation and the override
+    /// (fr-4); indentation note and undo sit on the same line
+    private func metadataRow(_ report: DiffReport) -> some View {
+        HStack(alignment: .center, spacing: 14) {
             Button {
                 isProfilePresented = true
             } label: {
-                HStack(spacing: 4) {
-                    Text("\(report.profile.profile.rawValue.capitalized) · \(report.profile.isAutomatic ? "auto" : "manual")")
-                        .font(.caption)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2)
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .overlay(Capsule().stroke(Theme.hairline, lineWidth: 0.5))
+                inlineMetadataLabel(
+                    "\(report.profile.profile.rawValue.uppercased()) / \(report.profile.isAutomatic ? "AUTO" : "MANUAL")")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
             .accessibilityLabel("Content profile: \(report.profile.profile.rawValue), \(report.profile.isAutomatic ? "detected automatically" : "manual override")")
+            .accessibilityHint("Shows the detection explanation and the profile override")
             .popover(isPresented: $isProfilePresented, arrowEdge: .top) {
                 ProfileInfoView(session: session, detected: report.profile)
                     .presentationCompactAdaptation(.popover)
             }
             if report.profile.isIndentationSensitive {
-                Text("indentation significant")
-                    .font(.caption2)
+                Text("INDENTATION SIGNIFICANT")
+                    .font(Theme.data)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityLabel("indentation significant")
             }
             Spacer(minLength: 0)
             if session.clearBackup != nil {
-                Button("Undo clear") { session.undoClear() }
-                    .font(.caption)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
+                TextAction(title: "Undo clear") { session.undoClear() }
+                    .padding(.vertical, -6)
             }
         }
+        .frame(minHeight: 32)
+    }
+
+    /// mono label with a disclosure chevron; a 44-point hit area laid out at
+    /// 32 points so the header stays compact
+    private func inlineMetadataLabel(_ text: String) -> some View {
+        HStack(spacing: 3) {
+            Text(text)
+                .font(Theme.label)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .semibold))
+        }
+        .foregroundStyle(Theme.accent)
+        .lineLimit(1)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .padding(.vertical, -6)
     }
 
     private func degradationNotice(_ reason: DegradationReason) -> some View {
         let text: String
         switch reason {
         case .softThreshold:
-            text = "Large input — details reduced to whole paragraphs and lines."
+            text = "Large input: detail reduced to whole paragraphs and lines."
         case .inputTooLarge:
-            text = "Input exceeds the 4 MB cap — showing a coarse comparison."
+            text = "Input exceeds the 4 MB cap: coarse comparison."
         case .pathologicalInput:
-            text = "Mostly rewritten — showing a block-level result."
+            text = "Mostly rewritten: block-level result."
         }
         return Label(text, systemImage: "info.circle")
             .font(.caption)
@@ -203,7 +274,7 @@ struct CompareScreen: View {
             emptyState
         } else if let report = session.report, let viewModel = session.viewModel {
             if case .identical = report.verdict {
-                // the banner is the result; no empty diff view (sdd §7.3)
+                // the statement is the result; no empty diff view (sdd §7.3)
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
@@ -212,6 +283,15 @@ struct CompareScreen: View {
                 }
                 .accessibilitySortPriority(2)
             }
+        } else if session.clearBackup != nil {
+            // one side cleared while the other still has text: keep the visible
+            // undo where the result metadata would otherwise offer it
+            HStack {
+                TextAction(title: "Undo clear") { session.undoClear() }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            Spacer(minLength: 0)
         } else {
             Spacer(minLength: 0)
         }
@@ -239,48 +319,30 @@ struct CompareScreen: View {
         }
     }
 
+    /// left-aligned instruction beneath the wells; no slogan (sdd §7.3, fr-13)
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Text("Paste two texts.\nRift tells you what actually changed.")
-                .font(.title3)
-                .fontDesign(.serif)
-                .multilineTextAlignment(.center)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Add an original and a revision.")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Button("Try an example") {
-                session.loadSample()
+                .padding(.top, 14)
+            HStack(spacing: 8) {
+                TextAction(title: "Load sample") { session.loadSample() }
+                if session.clearBackup != nil {
+                    TextAction(title: "Undo clear") { session.undoClear() }
+                }
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .fontDesign(.serif)
-            if session.clearBackup != nil {
-                Button("Undo clear") { session.undoClear() }
-                    .font(.footnote)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-            }
-            Spacer()
-            Spacer()
+            .padding(.leading, -8)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
     }
 
-    // MARK: - toolbar (sdd §7.2)
+    // MARK: - toolbar (sdd §7.2): global actions only
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                isAboutPresented = true
-            } label: {
-                Text("Rift")
-                    .font(.title3.weight(.semibold))
-                    .fontDesign(.serif)
-                    .foregroundStyle(.primary)
-            }
-            .accessibilityLabel("About Rift")
-        }
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
                 session.swapSides()
@@ -289,16 +351,6 @@ struct CompareScreen: View {
             }
             .disabled(!session.hasAnyInput)
             .accessibilityLabel("Swap sides")
-
-            Button {
-                presentationOverride = presentation == .unified ? .sideBySide : .unified
-            } label: {
-                Image(systemName: presentation == .unified
-                      ? "rectangle.split.2x1" : "rectangle.grid.1x2")
-            }
-            .disabled(session.report == nil)
-            .accessibilityLabel(presentation == .unified
-                                ? "Switch to side-by-side" : "Switch to unified")
 
             Button {
                 isInspectorPresented = true
@@ -372,8 +424,8 @@ struct ThinProgressBar: View {
 
     var body: some View {
         GeometryReader { geometry in
-            Capsule()
-                .fill(Color.secondary.opacity(0.35))
+            Rectangle()
+                .fill(Theme.ink.opacity(0.45))
                 .frame(width: max(geometry.size.width * 0.3, 24), height: 2)
                 .offset(x: slid ? geometry.size.width * 0.7 : 0)
         }
@@ -388,8 +440,8 @@ struct ThinProgressBar: View {
     }
 }
 
-/// profile chip popover (fr-4, sdd §3.3): the detector's one-line explanation
-/// plus the override picker; automation stays inspectable
+/// profile popover (fr-4, sdd §3.3): the detector's one-line explanation plus
+/// the override picker; automation stays inspectable
 struct ProfileInfoView: View {
     @Bindable var session: CompareSession
     let detected: DetectedProfile
@@ -398,20 +450,20 @@ struct ProfileInfoView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(detected.explanation)
                 .font(.footnote)
-                .fontDesign(.serif)
                 .fixedSize(horizontal: false, vertical: true)
             if detected.isAutomatic {
-                Text("Confidence \(Int((detected.confidence * 100).rounded())) %")
-                    .font(.caption2)
+                Text("CONFIDENCE \(Int((detected.confidence * 100).rounded())) %")
+                    .font(Theme.data)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("Confidence \(Int((detected.confidence * 100).rounded())) percent")
             }
             if detected.isIndentationSensitive {
                 Text("Indentation looks meaning-bearing, so layout rules keep it significant.")
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Divider().overlay(Theme.hairline)
+            RuleLine()
             Picker("Profile", selection: $session.profileOverride) {
                 Text("Automatic").tag(Profile?.none)
                 ForEach(Profile.allCases, id: \.self) { profile in
@@ -422,6 +474,7 @@ struct ProfileInfoView: View {
         }
         .padding(14)
         .frame(idealWidth: 300)
+        .tint(Theme.accent)
         .presentationBackground(Theme.paper)
     }
 }
