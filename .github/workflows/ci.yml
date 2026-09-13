@@ -27,7 +27,7 @@ jobs:
           xcodebuild test
           -project Rift.xcodeproj
           -scheme Rift
-          -destination 'platform=iOS Simulator,name=iPhone 16'
+          -destination 'platform=iOS Simulator,name=iPhone 17'
           CODE_SIGNING_ALLOWED=NO
 
   ubuntu:
