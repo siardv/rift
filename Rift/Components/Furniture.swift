@@ -101,12 +101,14 @@ struct OutlinedTextAction: View {
 }
 
 /// the vertical divider of a field's action row: one point of field edge,
-/// the height of a line of subheadline text (m3.1)
+/// about the height of one line of the row's text (m3.1)
 struct RowDivider: View {
+    var height: CGFloat = 18
+
     var body: some View {
         Rectangle()
             .fill(Theme.fieldEdge)
-            .frame(width: 1, height: 18)
+            .frame(width: 1, height: height)
             .accessibilityHidden(true)
     }
 }

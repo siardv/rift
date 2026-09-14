@@ -2,12 +2,12 @@ import SwiftUI
 import UIKit
 
 /// design tokens for the "quiet editorial instrument" register (sdd §7.1, m3
-/// refined by m3.1): the icon's ivory workspace and charcoal ink; input fields
-/// as a faintly lifted paper surface with a crisp low-contrast edge; one-point
-/// rules and half-point hairlines only where regions are genuinely analytical;
-/// one low radius; no authored shadows; three strictly limited type roles
-/// (serif, sans, mono). the accessible change colors and their non-color
-/// markings are unchanged from m2 (nfr-5)
+/// refined by m3.1 and m3.2): a near-white paper workspace and the icon's
+/// charcoal ink; input fields as clean white surfaces with a crisp low-contrast
+/// edge; one-point rules and half-point hairlines only where regions are
+/// genuinely analytical; one low radius; no authored shadows; three strictly
+/// limited type roles (serif, sans, mono). the accessible change colors and
+/// their non-color markings are unchanged from m2 (nfr-5)
 enum Theme {
     // MARK: - identity colors (match the supplied icon exactly)
 
@@ -18,11 +18,22 @@ enum Theme {
 
     // MARK: - grounds and ink
 
-    /// the workspace: ivory in light, charcoal in dark
-    static let paper: Color = dynamic(light: ivory, dark: charcoal)
+    /// the workspace (m3.2: cleaner white): a near-white warm paper in light —
+    /// the icon's ivory kept only as a whisper of warmth — and the icon's
+    /// charcoal in dark
+    static let paper: Color = dynamic(
+        light: UIColor(red: 0.980, green: 0.976, blue: 0.965, alpha: 1), // #FAF9F6
+        dark: charcoal)
 
-    /// primary ink and structural rules: charcoal on ivory, ivory on charcoal
+    /// primary ink and structural rules: charcoal on paper, ivory on charcoal
     static let ink: Color = dynamic(light: charcoal, dark: ivory)
+
+    /// the same ink for uikit-backed controls (the paste control's label)
+    static var inkUIColor: UIColor {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark ? Theme.ivory : Theme.charcoal
+        }
+    }
 
     /// explicit secondary ink for pane words, placeholders, sources, counts,
     /// the empty-result instruction and the subordinate Clear action: an opaque
@@ -33,18 +44,27 @@ enum Theme {
         light: UIColor(red: 0.388, green: 0.384, blue: 0.365, alpha: 1), // #63625D
         dark: UIColor(red: 0.694, green: 0.678, blue: 0.651, alpha: 1)) // #B1ADA6
 
-    /// the input field: paper lifted toward white in light (1.05:1 against the
-    /// canvas), charcoal lifted toward ivory in dark (1.11:1). also the tint
-    /// that lets the native PasteButton merge with the field it sits in
-    static let field: Color = dynamic(
-        light: UIColor(red: 0.976, green: 0.969, blue: 0.945, alpha: 1), // #F9F7F1
-        dark: UIColor(red: 0.157, green: 0.149, blue: 0.141, alpha: 1)) // #282624
+    /// the input field: clean white on the near-white paper in light (1.03:1),
+    /// charcoal lifted toward ivory in dark (1.11:1); the edge, not the fill,
+    /// carries the boundary
+    static let field: Color = Color(uiColor: fieldUIColor)
+
+    /// the same surface for uikit-backed controls: the paste control's
+    /// background, so the control merges with the field it sits in (a clear
+    /// background renders as black there)
+    static var fieldUIColor: UIColor {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.157, green: 0.149, blue: 0.141, alpha: 1) // #282624
+                : .white // #FFFFFF
+        }
+    }
 
     /// the crisp one-point edge of a field, the action-row divider and the
-    /// Load sample outline (1.50:1 against the canvas in light). if the
-    /// boundary is not immediately perceptible on the device at ordinary and
-    /// low brightness, this is the token to darken one step — never a shadow
-    /// or a stronger fill
+    /// Load sample outline (1.6:1 against the white field, 1.5:1 against the
+    /// paper in light). if the boundary is not immediately perceptible on the
+    /// device at ordinary and low brightness, this is the token to darken one
+    /// step — never a shadow or a stronger fill
     static let fieldEdge: Color = dynamic(
         light: UIColor(red: 0.792, green: 0.780, blue: 0.745, alpha: 1), // #CAC7BE
         dark: UIColor(red: 0.290, green: 0.282, blue: 0.271, alpha: 1)) // #4A4845
@@ -77,15 +97,18 @@ enum Theme {
     // MARK: - shape and metrics
 
     /// the only custom radius in the app: fields, the decoded-as badge, the
-    /// PasteButton border and the Load sample outline; native controls
+    /// paste control's corners and the Load sample outline; native controls
     /// otherwise keep system shapes
     static let fieldRadius: CGFloat = 4
 
-    /// horizontal inset of field content: the native PasteButton's internal
-    /// label padding at `.small` (13 pt measured on device), so the heading,
-    /// the placeholder and the Paste label share one left edge without any
-    /// negative padding
+    /// horizontal inset of field content (heading, meta line, excerpt)
     static let fieldInset: CGFloat = 13
+
+    /// the paste control's own internal label padding (estimated from the
+    /// device capture; adjust after measuring). the action row is inset by
+    /// `fieldInset - pasteControlPadding`, never by a negative value, so the
+    /// Paste label shares the content's left edge
+    static let pasteControlPadding: CGFloat = 8
 
     // MARK: - change colors (nfr-5: aa contrast, color never the sole channel)
 

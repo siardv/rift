@@ -60,9 +60,16 @@ struct CompareScreen: View {
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
-                VStack(spacing: 0) {
-                    header(proxy: proxy)
-                    resultArea
+                // one vertical scroll for fields, result header and result
+                // (m3.2): the fields are never squeezed by the result view, and
+                // a long result scrolls the fields away like a document. the
+                // change navigator stays in the bottom inset
+                ScrollView {
+                    VStack(spacing: 0) {
+                        header(proxy: proxy)
+                        resultArea
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if !changeAnchors.isEmpty, session.report != nil {
@@ -260,6 +267,8 @@ struct CompareScreen: View {
 
     // MARK: - result area (sdd §7.3, §7.4)
 
+    /// what follows the header inside the one scroll: the empty-area
+    /// instruction, the diff content, or nothing (identical, or one side only)
     @ViewBuilder
     private var resultArea: some View {
         if !session.hasAnyInput {
@@ -267,18 +276,16 @@ struct CompareScreen: View {
         } else if let report = session.report, let viewModel = session.viewModel {
             if case .identical = report.verdict {
                 // the statement is the result; no empty diff view (sdd §7.3)
-                Spacer(minLength: 0)
+                EmptyView()
             } else {
-                ScrollView {
-                    diffContent(report: report, viewModel: viewModel)
-                        .opacity(session.showsProgress ? 0.55 : 1)
-                }
-                .accessibilitySortPriority(2)
+                diffContent(report: report, viewModel: viewModel)
+                    .opacity(session.showsProgress ? 0.55 : 1)
+                    .accessibilitySortPriority(2)
             }
         } else {
             // one side filled: the empty field's placeholder carries the
             // instruction and its own undo, so the area stays quiet (sdd §7.3)
-            Spacer(minLength: 0)
+            EmptyView()
         }
     }
 
@@ -314,7 +321,6 @@ struct CompareScreen: View {
                 .foregroundStyle(Theme.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             OutlinedTextAction(title: "Load sample") { session.loadSample() }
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)

@@ -34,6 +34,12 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # hosting the uikit paste control through UIViewRepresentable makes the
+        # xcode 26 compiler emit auto-link hints for two frameworks an app may
+        # not link directly (SwiftUICore, UIUtilities); every symbol resolves
+        # through SwiftUI and UIKit regardless, so the hints are switched off to
+        # keep the link warning-free (m3.2)
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xfrontend -disable-autolink-framework -Xfrontend SwiftUICore -Xfrontend -disable-autolink-framework -Xfrontend UIUtilities"
   RiftTests:
     type: bundle.unit-test
     platform: iOS

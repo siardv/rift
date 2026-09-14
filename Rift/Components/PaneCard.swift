@@ -3,11 +3,11 @@ import RiftEngine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// one input pane as an editorial input field (fr-1, sdd §7.2, m3.1): a paper
-/// field on the ivory canvas with a crisp low-contrast edge, a two-role
-/// heading, a pane-specific placeholder or the first lines, and a 44-point row
-/// of plain text actions — tap to edit, drag & drop target. the type keeps its
-/// m2 name; only the presentation changed
+/// one input pane as an editorial input field (fr-1, sdd §7.2, m3.1–m3.2): a
+/// white field on the paper canvas with a crisp low-contrast edge, a two-role
+/// heading, a pane-specific placeholder or a two-line excerpt, and a 44-point
+/// row of plain text actions — tap to edit, drag & drop target. the type keeps
+/// its m2 name; only the presentation changed
 struct PaneCard: View {
     let pane: PaneID
     @Bindable var session: CompareSession
@@ -30,6 +30,16 @@ struct PaneCard: View {
         pane == .a ? "Original" : "Revision"
     }
 
+    /// the first lines as a flowing excerpt (m3.2): line breaks and runs of
+    /// blank lines collapse, so two preview lines carry as much text as they can
+    private var excerpt: String {
+        text.prefix(240)
+            .split(whereSeparator: { $0.isNewline })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             heading
@@ -37,12 +47,15 @@ struct PaneCard: View {
                 .accessibilityHidden(true)
             preview
                 .padding(.horizontal, Theme.fieldInset)
-                .padding(.top, 6)
+                .padding(.top, 8)
             actionRow
                 .padding(.trailing, Theme.fieldInset)
-                .padding(.top, 8)
+                .padding(.top, 2)
         }
-        .padding(.vertical, 12)
+        // the 44-point action row carries its own slack below its text, so the
+        // bottom inset is small to keep the field visually balanced
+        .padding(.top, 12)
+        .padding(.bottom, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
@@ -67,52 +80,31 @@ struct PaneCard: View {
         .accessibilityLabel(accessibilitySummary)
     }
 
-    // MARK: - heading: marker + word, source, badge, counts
+    // MARK: - heading: identity line, then one quiet meta line
 
-    /// three complete candidates, chosen by what actually fits: one row;
-    /// identity / source / badge with the counts beneath; everything stacked.
-    /// accessibility sizes go straight to the stacked layout
+    /// the identity (`A` + `Original`) on its own line; beneath it, when there
+    /// is anything to say, one sans meta line: source, counts, decoded badge.
+    /// the meta line has two candidates (one line; source and counts on
+    /// separate lines) and accessibility sizes stack outright (m3.2)
     @ViewBuilder
     private var heading: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            headingStacked
-        } else {
-            ViewThatFits(in: .horizontal) {
-                headingOneRow
-                headingTwoRows
-                headingStacked
+        VStack(alignment: .leading, spacing: 3) {
+            identity
+            if hasMeta {
+                if dynamicTypeSize.isAccessibilitySize {
+                    metaStacked
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        metaOneLine
+                        metaStacked
+                    }
+                }
             }
         }
     }
 
-    private var headingOneRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            identity
-            sourceText(separated: true)
-            decodedBadge
-            Spacer(minLength: 12)
-            countsText
-        }
-    }
-
-    private var headingTwoRows: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                identity
-                sourceText(separated: true)
-                decodedBadge
-            }
-            countsText
-        }
-    }
-
-    private var headingStacked: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            identity
-            sourceText(separated: false)
-            decodedBadge
-            countsText
-        }
+    private var hasMeta: Bool {
+        meta.sourceLabel != nil || meta.decodedAs != nil || session.counts(for: pane) != nil
     }
 
     /// the two typographic roles: a compact strong marker and the quiet word
@@ -128,13 +120,34 @@ struct PaneCard: View {
         .fixedSize()
     }
 
-    /// filename or source hint; yields first when the row is tight
+    private var metaOneLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            sourceText
+            if meta.sourceLabel != nil, session.counts(for: pane) != nil {
+                Text("·")
+            }
+            countsText
+            decodedBadge
+        }
+        .font(.footnote)
+        .foregroundStyle(Theme.inkSecondary)
+    }
+
+    private var metaStacked: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            sourceText
+            countsText
+            decodedBadge
+        }
+        .font(.footnote)
+        .foregroundStyle(Theme.inkSecondary)
+    }
+
+    /// filename or source hint; yields first when the line is tight
     @ViewBuilder
-    private func sourceText(separated: Bool) -> some View {
+    private var sourceText: some View {
         if let source = meta.sourceLabel {
-            Text(separated ? "· \(source)" : source)
-                .font(.footnote)
-                .foregroundStyle(Theme.inkSecondary)
+            Text(source)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .layoutPriority(-1)
@@ -147,7 +160,6 @@ struct PaneCard: View {
         if let decoded = meta.decodedAs {
             Text("DECODED AS \(decoded.uppercased())")
                 .font(Theme.dataSmall)
-                .foregroundStyle(Theme.inkSecondary)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .overlay(
@@ -158,30 +170,41 @@ struct PaneCard: View {
         }
     }
 
-    /// counts are measurements, so they keep the mono uppercase register
+    /// counts in plain words on the field (m3.2); the mono uppercase register
+    /// stays with the analytical result metadata and the ladder
     @ViewBuilder
     private var countsText: some View {
         if let counts = session.counts(for: pane) {
-            Text("\(counts.characters.formatted()) CHAR · \(counts.words.formatted()) WORD · \(counts.lines.formatted()) LINE")
-                .font(Theme.dataSmall)
-                .foregroundStyle(Theme.inkSecondary)
+            Text(Self.countsPhrase(counts))
                 .lineLimit(2)
         }
     }
 
-    // MARK: - preview: pane-specific placeholder, or the first lines
+    private static func countsPhrase(_ counts: TextCounts) -> String {
+        func unit(_ n: Int, _ singular: String, _ plural: String) -> String {
+            "\(n.formatted()) \(n == 1 ? singular : plural)"
+        }
+        return unit(counts.characters, "character", "characters")
+            + " · " + unit(counts.words, "word", "words")
+            + " · " + unit(counts.lines, "line", "lines")
+    }
 
+    // MARK: - preview: pane-specific placeholder, or the excerpt
+
+    /// body size, like a text field's own content (m3.2); the field grows to
+    /// two lines once there is text and is never squeezed by the result view
     @ViewBuilder
     private var preview: some View {
         if text.isEmpty {
             Text(pane == .a ? "Tap to add original." : "Tap to add revision.")
-                .font(.subheadline)
+                .font(.body)
                 .foregroundStyle(Theme.inkSecondary)
         } else {
-            Text(String(text.prefix(160)))
-                .font(.subheadline)
+            Text(excerpt)
+                .font(.body)
                 .foregroundStyle(Theme.ink)
                 .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -201,21 +224,29 @@ struct PaneCard: View {
         }
     }
 
+    /// the row starts `fieldInset - pasteControlPadding` in, so the Paste
+    /// label lands on the content's left edge without negative padding
+    private var rowLeadingInset: CGFloat {
+        max(0, Theme.fieldInset - Theme.pasteControlPadding)
+    }
+
     private var actionsOneRow: some View {
         HStack(alignment: .center, spacing: 0) {
             pasteControl
-            RowDivider()
+            RowDivider(height: 20)
             openFileAction
                 .padding(.leading, 12)
             Spacer(minLength: 12)
             trailingAction(alignment: .trailing)
         }
+        .padding(.leading, rowLeadingInset)
         .frame(minHeight: 44)
     }
 
     private var actionsStacked: some View {
         VStack(alignment: .leading, spacing: 0) {
             pasteControl
+                .padding(.leading, rowLeadingInset)
             openFileAction
                 .padding(.leading, Theme.fieldInset)
             trailingAction(alignment: .leading)
@@ -223,27 +254,19 @@ struct PaneCard: View {
         }
     }
 
-    /// the native paste control (fr-1), tinted to the field so only its label
-    /// shows, laid out in a 44-point frame with a rectangular content shape.
-    /// its label color on this fill and its interactive frame are verified on
-    /// device (m3.1 acceptance); pasteboard access stays the system's
+    /// the system paste control as plain text (fr-1, m3.2): a UIPasteControl
+    /// with a clear background and the ink as label, at least 44 points tall
+    /// by its own sizing; pasteboard access stays the system's
     private var pasteControl: some View {
-        PasteButton(payloadType: String.self) { strings in
-            Task { @MainActor in
-                session.pasted(strings, into: pane)
-            }
+        PasteControl { strings in
+            session.pasted(strings, into: pane)
         }
-        .labelStyle(.titleOnly)
-        .controlSize(.small)
-        .buttonBorderShape(.roundedRectangle(radius: Theme.fieldRadius))
-        .tint(Theme.field)
-        .foregroundStyle(Theme.ink)
         .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
 
     private var openFileAction: some View {
-        TextAction(title: "Open File…", font: .subheadline, color: Theme.ink,
+        TextAction(title: "Open File…", font: .body, color: Theme.ink,
                    horizontalPadding: 0, alignment: .leading) {
             onRequestImport(pane)
         }
@@ -256,14 +279,14 @@ struct PaneCard: View {
     private func trailingAction(alignment: Alignment) -> some View {
         if text.isEmpty {
             if session.undoablePane == pane {
-                TextAction(title: "Undo", font: .subheadline, color: Theme.ink,
+                TextAction(title: "Undo", font: .body, color: Theme.ink,
                            horizontalPadding: 0, alignment: alignment) {
                     session.undoClear()
                 }
                 .accessibilityLabel("Undo clear of pane \(pane.rawValue)")
             }
         } else {
-            TextAction(title: "Clear", font: .subheadline, color: Theme.inkSecondary,
+            TextAction(title: "Clear", font: .body, color: Theme.inkSecondary,
                        horizontalPadding: 0, alignment: alignment) {
                 session.clear(pane, undoManager: undoManager)
             }
