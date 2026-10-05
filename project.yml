@@ -49,6 +49,9 @@ targets:
       # RiftTests has no host app, so app-side logic under test must be shared
       # as source rather than imported from the Rift module
       - path: Rift/State/ClearUndoLedger.swift
+      # the pure result-presentation state (layout choice, column rule, change
+      # selection) is shared the same way (m3.3a)
+      - path: Rift/State/ResultPresentation.swift
     dependencies:
       - package: RiftEngine
     settings:

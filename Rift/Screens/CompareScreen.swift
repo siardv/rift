@@ -2,30 +2,44 @@ import RiftEngine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// the single main screen (sdd §7.2): input fields, result header (eyebrow,
-/// verdict, compact notation, metadata, rule), result view, and a rectangular
-/// change navigator in the bottom safe-area inset; inspector and settings live
-/// in sheets. the screen renders CompareSession state and never computes
-/// (sdd §1.5, §5.3)
+/// the single main screen (sdd §7.2): input fields, result header (verdict,
+/// notation line, the content / comparison / layout controls, rule), result
+/// view, and a rectangular change navigator in the bottom safe-area inset;
+/// inspector and settings live in sheets. the screen renders CompareSession
+/// state and never computes (sdd §1.5, §5.3). the result's own view state
+/// (layout choice, change selection) is pure and lives in
+/// ResultPresentation.swift (m3.3a)
 struct CompareScreen: View {
     @State private var session = CompareSession()
     private var settings = ViewerSettings()
 
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.verticalSizeClass) private var vSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var proseUnit: CGFloat = Theme.proseBaseSize
 
     @State private var isInspectorPresented = false
     @State private var isSettingsPresented = false
     @State private var isAboutPresented = false
     @State private var isProfilePresented = false
+    @State private var isLayoutPresented = false
     @State private var isImporterPresented = false
     @State private var importTarget: PaneID?
-    @State private var presentationOverride: DiffPresentation?
-    @State private var currentChange = 0
+
+    // MARK: - per-comparison view state (m3.3a): reset only when both sources are empty
+
+    @State private var layoutChoice: LayoutChoice = .automatic
+    @State private var selection = ChangeSelection()
+    /// the evidence width after the safe area and the evidence padding: the
+    /// scroll content's width less the 16-point padding on each side
+    @State private var evidenceWidth: CGFloat = 0
 
     private static let importTypes: [UTType] = [
         .plainText, .text, .sourceCode, .json, .xml, .yaml, .commaSeparatedText, .log,
     ]
+
+    /// horizontal padding of the evidence, on each side (ProseDiffView)
+    private static let evidencePadding: CGFloat = 16
 
     // MARK: - layout defaults (sdd §7.2, fr-7)
 
@@ -33,17 +47,18 @@ struct CompareScreen: View {
         hSizeClass == .regular || vSizeClass == .compact
     }
 
-    private var presentation: DiffPresentation {
-        presentationOverride ?? (isWide ? .sideBySide : .unified)
+    /// the effective type size over its base, times the viewer font scale
+    private var typeScale: Double {
+        Double(proseUnit / Theme.proseBaseSize) * settings.fontScale
     }
 
-    /// the menu edits the override; the getter reports the effective layout so
-    /// the current choice is checked even before the user has overridden it
-    private var presentationBinding: Binding<DiffPresentation> {
-        let override = $presentationOverride
-        let fallback: DiffPresentation = isWide ? .sideBySide : .unified
-        return Binding(get: { override.wrappedValue ?? fallback },
-                       set: { override.wrappedValue = $0 })
+    private var twoColumnsFit: Bool {
+        ColumnFit.twoColumnsFit(contentWidth: Double(evidenceWidth), typeScale: typeScale)
+    }
+
+    /// the rendered geometry: the explicit choice as chosen, automatic by width
+    private var presentation: DiffPresentation {
+        layoutChoice.resolvePresentation(twoColumnsFit: twoColumnsFit)
     }
 
     private var changeAnchors: [ChangeAnchor] {
@@ -70,12 +85,19 @@ struct CompareScreen: View {
                         resultArea
                     }
                     .frame(maxWidth: .infinity)
+                    // the scroll content's width is known from the first
+                    // layout pass, before any result exists, so the layout
+                    // never flickers from one geometry to another (m3.3a)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.size.width
+                    } action: { width in
+                        evidenceWidth = max(0, width - 2 * Self.evidencePadding)
+                    }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if !changeAnchors.isEmpty, session.report != nil {
+                    if selection.isVisible, session.report != nil {
                         ChangeNavigator(
-                            total: changeAnchors.count,
-                            current: currentChange,
+                            selection: selection,
                             onPrevious: { navigate(by: -1, proxy: proxy) },
                             onNext: { navigate(by: 1, proxy: proxy) })
                     }
@@ -121,11 +143,28 @@ struct CompareScreen: View {
             Text(notice.message)
         }
         .onChange(of: session.publishCount) {
-            currentChange = 0
+            // a recomputation keeps the selection, clamped to the new total.
+            // one-sided states publish too, with a nil report, and must not
+            // touch it (m3.3a)
+            guard session.report != nil else { return }
+            selection.clamp(total: changeAnchors.count)
+        }
+        .onChange(of: session.hasAnyInput) {
+            if !session.hasAnyInput {
+                resetPerComparisonState()
+            }
         }
     }
 
-    // MARK: - header: fields, result statement, metadata (sdd §7.3)
+    /// the comparison boundary (m3.3a): both sources empty resets every
+    /// per-comparison view choice; nothing else does
+    private func resetPerComparisonState() {
+        layoutChoice = .automatic
+        selection.reset()
+        session.revealFormatting = false
+    }
+
+    // MARK: - header: fields, result statement, controls (sdd §7.3)
 
     @ViewBuilder
     private func header(proxy: ScrollViewProxy) -> some View {
@@ -160,29 +199,19 @@ struct CompareScreen: View {
         }
     }
 
-    /// eyebrow + layout selection, the verdict, inline metadata, then the
-    /// structural rule that separates the statement from its evidence
+    /// the verdict, its notation line, the three controls, then the structural
+    /// rule that separates the statement from its evidence (m3.3a: no eyebrow)
     @ViewBuilder
     private func resultHeader(_ report: DiffReport, proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center) {
-                Text("RESULT")
-                    .font(Theme.label)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Spacer(minLength: 8)
-                if hasResultContent {
-                    layoutMenu
-                }
-            }
-            .frame(minHeight: 20)
             VerdictBanner(
                 verdict: report.verdict,
                 revealActive: session.revealFormatting,
                 onJumpToFirstChange: { jump(to: 1, proxy: proxy) },
                 onToggleReveal: { session.revealFormatting.toggle() })
                 .accessibilitySortPriority(3)
-            metadataRow(report)
+            metaLine(report)
+                .accessibilitySortPriority(2.5)
             if report.document.isDegraded, let reason = report.document.degradationReason {
                 degradationNotice(reason)
             }
@@ -190,64 +219,95 @@ struct CompareScreen: View {
         }
     }
 
-    /// unified / side-by-side selection lives beside the result it changes
-    /// (fr-7); a native menu, so its shape is the system's
-    private var layoutMenu: some View {
-        Menu {
-            Picker("Layout", selection: presentationBinding) {
-                Text("Unified").tag(DiffPresentation.unified)
-                Text("Side by side").tag(DiffPresentation.sideBySide)
+    // MARK: - the three header controls (m3.3a): content, comparison, layout
+
+    /// one row when the controls fit (layout at the trailing edge), otherwise
+    /// as many rows as needed in order (content and comparison, then layout),
+    /// one control per row at accessibility sizes; nothing is abbreviated or
+    /// hidden. ControlRows places each control exactly once, so each keeps
+    /// its own popover
+    private func metaLine(_ report: DiffReport) -> some View {
+        ControlRows(onePerRow: dynamicTypeSize.isAccessibilitySize,
+                    trailingLast: hasResultContent) {
+            contentControl(report)
+            comparisonLink
+            if hasResultContent {
+                layoutControl
             }
+        }
+    }
+
+    /// `Content: Prose ▾` opens the detector's explanation and the override
+    /// (fr-4); `· chosen` marks a manual override
+    private func contentControl(_ report: DiffReport) -> some View {
+        Button {
+            isProfilePresented = true
         } label: {
-            inlineMetadataLabel(presentation == .unified ? "UNIFIED" : "SIDE BY SIDE")
+            headerControl(prefix: "Content:", value: contentValue(report), glyph: "chevron.down")
         }
-        .accessibilityLabel("Layout: \(presentation == .unified ? "unified" : "side by side")")
-        .accessibilityHint("Chooses between unified and side-by-side result layouts")
+        .buttonStyle(.plain)
+        .accessibilityLabel("Content profile: \(report.profile.profile.rawValue), \(report.profile.isAutomatic ? "detected automatically" : "manual override")")
+        .accessibilityHint("Shows the detection explanation and the profile override")
+        .popover(isPresented: $isProfilePresented, arrowEdge: .top) {
+            ProfileInfoView(session: session, detected: report.profile)
+                .presentationCompactAdaptation(.popover)
+        }
     }
 
-    /// `PROSE / AUTO ▾` opens the detector's explanation and the override
-    /// (fr-4); the indentation note sits on the same line
-    private func metadataRow(_ report: DiffReport) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            Button {
-                isProfilePresented = true
-            } label: {
-                inlineMetadataLabel(
-                    "\(report.profile.profile.rawValue.uppercased()) / \(report.profile.isAutomatic ? "AUTO" : "MANUAL")")
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Content profile: \(report.profile.profile.rawValue), \(report.profile.isAutomatic ? "detected automatically" : "manual override")")
-            .accessibilityHint("Shows the detection explanation and the profile override")
-            .popover(isPresented: $isProfilePresented, arrowEdge: .top) {
-                ProfileInfoView(session: session, detected: report.profile)
-                    .presentationCompactAdaptation(.popover)
-            }
-            if report.profile.isIndentationSensitive {
-                Text("INDENTATION SIGNIFICANT")
-                    .font(Theme.data)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .accessibilityLabel("indentation significant")
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(minHeight: 32)
+    private func contentValue(_ report: DiffReport) -> String {
+        let name = report.profile.profile.rawValue.capitalized
+        return report.profile.isAutomatic ? name : "\(name) · chosen"
     }
 
-    /// mono label with a disclosure chevron; a 44-point hit area laid out at
-    /// 32 points so the header stays compact
-    private func inlineMetadataLabel(_ text: String) -> some View {
-        HStack(spacing: 3) {
-            Text(text)
-                .font(Theme.label)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 8, weight: .semibold))
+    /// `Comparison: Smart ›` names the mode in every result state, smart
+    /// included, and opens the inspector where it is set (fr-5)
+    private var comparisonLink: some View {
+        Button {
+            isInspectorPresented = true
+        } label: {
+            headerControl(prefix: "Comparison:", value: session.modeChoice.label, glyph: "chevron.right")
         }
-        .foregroundStyle(Theme.accent)
-        .lineLimit(1)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Comparison: \(session.modeChoice.label.lowercased())")
+        .accessibilityHint("Opens the Inspector")
+    }
+
+    /// `Layout: Automatic ▾` opens the chooser (fr-7): a popover, like the
+    /// content profile's, so the three descriptions are visible rather than
+    /// left to a menu's accessibility hints
+    private var layoutControl: some View {
+        Button {
+            isLayoutPresented = true
+        } label: {
+            headerControl(prefix: "Layout:", value: layoutChoice.menuTitle, glyph: "chevron.down")
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Layout options")
+        .accessibilityValue(layoutChoice.accessibilityValue(effective: presentation))
+        .accessibilityHint("Chooses how the result is laid out")
+        .popover(isPresented: $isLayoutPresented) {
+            LayoutChooserView(choice: $layoutChoice)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    /// a header control: a quiet prefix, the value in ink, and a small glyph
+    /// that says what it opens (chevron.down: a menu or popover; chevron.right:
+    /// another screen), laid out in a genuine 44-point frame (nfr-5)
+    private func headerControl(prefix: String, value: String, glyph: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(prefix)
+                .foregroundStyle(Theme.inkSecondary)
+            Text(value)
+                .foregroundStyle(Theme.ink)
+            Image(systemName: glyph)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.inkSecondary)
+        }
+        .font(.subheadline)
+        .fixedSize(horizontal: false, vertical: true)
         .frame(minHeight: 44)
         .contentShape(Rectangle())
-        .padding(.vertical, -6)
     }
 
     private func degradationNotice(_ reason: DegradationReason) -> some View {
@@ -389,16 +449,25 @@ struct CompareScreen: View {
         isImporterPresented = true
     }
 
+    /// previous / next from the navigator: the selection moves first, so the
+    /// label and the arrows can never disagree; the announcement names the
+    /// new selection for voiceover
     private func navigate(by delta: Int, proxy: ScrollViewProxy) {
-        let total = changeAnchors.count
-        guard total > 0 else { return }
-        let next = min(max(currentChange + delta, 1), total)
-        jump(to: next, proxy: proxy)
+        let target = delta > 0 ? selection.next() : selection.previous()
+        guard let target else { return }
+        scroll(to: target, proxy: proxy)
+        AccessibilityNotification.Announcement(selection.label).post()
     }
 
+    /// the verdict tap: selects and scrolls to the given ordinal
     private func jump(to ordinal: Int, proxy: ScrollViewProxy) {
+        guard selection.jump(to: ordinal) else { return }
+        scroll(to: ordinal, proxy: proxy)
+        AccessibilityNotification.Announcement(selection.label).post()
+    }
+
+    private func scroll(to ordinal: Int, proxy: ScrollViewProxy) {
         guard ordinal >= 1, ordinal <= changeAnchors.count else { return }
-        currentChange = ordinal
         withAnimation(nil) {
             proxy.scrollTo(DiffViewModel.anchorID(changeAnchors[ordinal - 1].hunkIndex),
                            anchor: .top)
@@ -463,6 +532,148 @@ struct ProfileInfoView: View {
             .pickerStyle(.menu)
         }
         .padding(14)
+        .frame(idealWidth: 300)
+        .tint(Theme.accent)
+        .presentationBackground(Theme.paper)
+    }
+}
+
+/// rows of header controls (m3.3a): as many controls per row as fit, in
+/// order, each measured at its ideal width so nothing truncates; when every
+/// control fits on one row and `trailingLast` is set, the last control (the
+/// layout control) is pushed to the trailing edge; `onePerRow` gives every
+/// control its own row and lets its text wrap (accessibility sizes). each
+/// control is placed exactly once, so its popover stays attached to it
+struct ControlRows: Layout {
+    var spacing: CGFloat = 14
+    var rowSpacing: CGFloat = 4
+    var onePerRow = false
+    var trailingLast = false
+
+    /// one placed control: its index, the proposal it was measured with (the
+    /// same one it is placed with) and the size that produced
+    private struct Cell {
+        let index: Int
+        let proposal: ProposedViewSize
+        let size: CGSize
+    }
+
+    private struct Row {
+        var cells: [Cell] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    /// the rows for a given width. a control is measured at its ideal width;
+    /// one wider than the row, or every control at accessibility sizes, is
+    /// measured at the row width so its text wraps instead of overflowing.
+    /// once a break has happened every later control starts its own row, so
+    /// the outcomes are exactly: one row; content and comparison, then
+    /// layout; one control per row
+    private func rows(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var row = Row()
+        for (index, subview) in subviews.enumerated() {
+            var proposal: ProposedViewSize = onePerRow ? ProposedViewSize(width: width, height: nil) : .unspecified
+            var size = subview.sizeThatFits(proposal)
+            if !onePerRow, size.width > width {
+                proposal = ProposedViewSize(width: width, height: nil)
+                size = subview.sizeThatFits(proposal)
+            }
+            let extended = row.cells.isEmpty ? size.width : row.width + spacing + size.width
+            if !row.cells.isEmpty, onePerRow || !rows.isEmpty || extended > width {
+                rows.append(row)
+                row = Row()
+            }
+            row.width = row.cells.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.cells.append(Cell(index: index, proposal: proposal, size: size))
+        }
+        if !row.cells.isEmpty {
+            rows.append(row)
+        }
+        return rows
+    }
+
+    private func availableWidth(_ proposal: ProposedViewSize) -> CGFloat {
+        guard let width = proposal.width, width.isFinite else { return .greatestFiniteMagnitude }
+        return width
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = availableWidth(proposal)
+        let rows = rows(width: width, subviews: subviews)
+        let height = rows.reduce(CGFloat(0)) { $0 + $1.height }
+            + rowSpacing * CGFloat(max(rows.count - 1, 0))
+        let widest = rows.reduce(CGFloat(0)) { max($0, $1.width) }
+        return CGSize(width: width < .greatestFiniteMagnitude ? width : widest, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = rows(width: bounds.width, subviews: subviews)
+        var y = bounds.minY
+        for row in rows {
+            var x = bounds.minX
+            for (position, cell) in row.cells.enumerated() {
+                let isTrailing = trailingLast && rows.count == 1 && subviews.count > 1
+                    && position == row.cells.count - 1
+                let originX = isTrailing ? bounds.maxX - cell.size.width : x
+                subviews[cell.index].place(
+                    at: CGPoint(x: originX, y: y + (row.height - cell.size.height) / 2),
+                    anchor: .topLeading, proposal: cell.proposal)
+                x += cell.size.width + spacing
+            }
+            y += row.height + rowSpacing
+        }
+    }
+}
+
+/// the layout chooser (fr-7, m3.3a): three rows, each a title, its one-line
+/// description and a checkmark on the current choice, divided by hairlines.
+/// a popover like the content profile's, so the descriptions stay visible
+struct LayoutChooserView: View {
+    @Binding var choice: LayoutChoice
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(LayoutChoice.allCases.enumerated()), id: \.element) { index, option in
+                if index > 0 {
+                    RuleLine()
+                }
+                Button {
+                    choice = option
+                    dismiss()
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(option.menuTitle)
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.ink)
+                            Text(option.menuDescription)
+                                .font(.footnote)
+                                .foregroundStyle(Theme.inkSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "checkmark")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.ink)
+                            .opacity(option == choice ? 1 : 0)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.menuTitle)
+                .accessibilityHint(option.menuDescription)
+                .accessibilityAddTraits(option == choice ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
         .frame(idealWidth: 300)
         .tint(Theme.accent)
         .presentationBackground(Theme.paper)

@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// previous / next with the `n / k` counter (fr-9, sdd §7.4): a rectangular bar
+/// previous / next with the change label (fr-9, sdd §7.4): a rectangular bar
 /// in the bottom safe-area inset, bounded by a one-point rule — no floating
-/// capsule, no shadow. 44-point targets (nfr-5)
+/// capsule, no shadow. 44-point targets (nfr-5). the label and the arrows come
+/// from one ChangeSelection, so they never contradict each other (m3.3a):
+/// `2 changes` while nothing is selected, `Change 1 of 2` after a selection
 struct ChangeNavigator: View {
-    let total: Int
-    let current: Int
+    let selection: ChangeSelection
     let onPrevious: () -> Void
     let onNext: () -> Void
 
@@ -15,27 +16,26 @@ struct ChangeNavigator: View {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 Button(action: onPrevious) {
-                    Image(systemName: "arrow.up")
+                    Image(systemName: "chevron.up")
                         .font(.body.weight(.medium))
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .disabled(current <= 1)
+                .disabled(!selection.canGoPrevious)
                 .accessibilityLabel("Previous change")
 
-                Text("\(max(current, 1)) / \(total)")
-                    .font(.footnote.monospaced())
+                Text(selection.label)
+                    .font(.footnote.monospacedDigit())
                     .foregroundStyle(Theme.ink)
-                    .frame(minWidth: 56)
-                    .accessibilityLabel("Change \(max(current, 1)) of \(total)")
+                    .frame(minWidth: 96)
 
                 Button(action: onNext) {
-                    Image(systemName: "arrow.down")
+                    Image(systemName: "chevron.down")
                         .font(.body.weight(.medium))
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .disabled(current >= total)
+                .disabled(!selection.canGoNext)
                 .accessibilityLabel("Next change")
             }
             .padding(.horizontal, 8)
@@ -45,6 +45,9 @@ struct ChangeNavigator: View {
 }
 
 #Preview {
-    ChangeNavigator(total: 7, current: 2, onPrevious: {}, onNext: {})
-        .tint(Theme.accent)
+    VStack(spacing: 24) {
+        ChangeNavigator(selection: ChangeSelection(total: 7), onPrevious: {}, onNext: {})
+        ChangeNavigator(selection: ChangeSelection(total: 7, current: 2), onPrevious: {}, onNext: {})
+    }
+    .tint(Theme.accent)
 }

@@ -5,7 +5,8 @@ import UIKit
 /// highlights from segments, unchanged runs collapsible with 3 lines of
 /// context behind a rule interrupted by "n unchanged lines". side-by-side pairs
 /// rows on one shared vertical scroll, so the two columns stay synchronized by
-/// construction (fr-7)
+/// construction (fr-7); stacked pairs (m3.3a) show each changed pair as its a
+/// cell above its b cell where two columns do not fit
 struct CodeDiffView: View {
     let rows: [LineRow]
     let pairs: [LinePair]
@@ -36,6 +37,10 @@ struct CodeDiffView: View {
             case .sideBySide:
                 ForEach(pairItems()) { item in
                     itemView(item)
+                }
+            case .stackedPairs:
+                ForEach(pairItems()) { item in
+                    stackedItemView(item)
                 }
             }
         }
@@ -153,6 +158,46 @@ struct CodeDiffView: View {
             return DiffViewModel.anchorID(row.hunkIndex)
         }
         return "pair-\(pair.id)"
+    }
+
+    /// the stacked-pair reading (m3.3a): context pairs as one unified row with
+    /// both gutters, changed pairs as stacked cells; expanders and the copy row
+    /// as in the other readings
+    @ViewBuilder
+    private func stackedItemView(_ item: DisplayItem) -> some View {
+        switch item {
+        case .pair(let pair):
+            if let left = pair.left, left.kind == .context {
+                rowView(left)
+                    .id(pairAnchor(pair))
+            } else {
+                stackedPairView(pair)
+                    .id(pairAnchor(pair))
+            }
+        default:
+            itemView(item)
+        }
+    }
+
+    /// one changed pair stacked: the a cell above the b cell, a hairline below
+    /// the pair; the same tap and accessibility behavior as the paired row
+    private func stackedPairView(_ pair: LinePair) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let left = pair.left {
+                cellView(left, side: .a)
+            }
+            if let right = pair.right {
+                cellView(right, side: .b)
+            }
+            RuleLine()
+                .padding(.vertical, 2)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard let row = pair.left ?? pair.right, row.kind != .context else { return }
+            selectedHunk = selectedHunk == row.hunkIndex ? nil : row.hunkIndex
+        }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - unified row

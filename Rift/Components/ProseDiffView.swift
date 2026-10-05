@@ -1,16 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// which result layout is active (fr-7); defaults per sdd §7.2
-enum DiffPresentation: String, Hashable {
-    case unified
-    case sideBySide
-}
-
 /// the prose reading view (fr-8, sdd §7.4): paragraphs as flowing serif text
 /// with inline track-changes-style highlights; unchanged runs collapse to a
 /// rule interrupted by "n unchanged paragraphs". side-by-side pairs the two
-/// originals. serif here is one of its two production roles (sdd §7.1)
+/// originals in columns; stacked pairs (m3.3a) pair them vertically where two
+/// columns do not fit. the presentation enum lives in ResultPresentation.swift.
+/// serif here is one of its two production roles (sdd §7.1)
 struct ProseDiffView: View {
     let blocks: [ProseBlock]
     let presentation: DiffPresentation
@@ -68,16 +64,18 @@ struct ProseDiffView: View {
         }
     }
 
-    /// one paragraph position, honoring the active presentation
+    /// one paragraph position, honoring the active presentation; unchanged
+    /// paragraphs appear once in the stacked-pair reading, like the inline one
     @ViewBuilder
     private func paragraphContent(_ block: ProseBlock, index: Int) -> some View {
         switch presentation {
-        case .unified:
+        case .unified, .stackedPairs:
             if index < block.merged.count {
                 paragraphText(block.merged[index])
             }
         case .sideBySide:
-            HStack(alignment: .top, spacing: 12) {
+            // two gaps flank the separator, matching ColumnFit.columnGap
+            HStack(alignment: .top, spacing: 6) {
                 sideParagraph(block.sideA, index: index)
                 Rectangle().fill(Theme.hairline).frame(width: 0.5)
                 sideParagraph(block.sideB, index: index)
@@ -126,13 +124,16 @@ struct ProseDiffView: View {
                 let count = max(block.sideA.count, block.sideB.count)
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(0..<max(count, 1), id: \.self) { index in
-                        HStack(alignment: .top, spacing: 12) {
+                        // two gaps flank the separator, matching ColumnFit.columnGap
+                        HStack(alignment: .top, spacing: 6) {
                             sideParagraph(block.sideA, index: index)
                             Rectangle().fill(Theme.hairline).frame(width: 0.5)
                             sideParagraph(block.sideB, index: index)
                         }
                     }
                 }
+            case .stackedPairs:
+                stackedPair(block)
             }
             if selectedBlockID == block.id {
                 copyActions(block)
@@ -147,6 +148,40 @@ struct ProseDiffView: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Copy before") { copy(plain(block.sideA)) }
         .accessibilityAction(named: "Copy after") { copy(plain(block.sideB)) }
+    }
+
+    /// the paired reading where two columns do not fit (m3.3a): the a passage,
+    /// a hairline, then the b passage, each behind its side marker; an absent
+    /// side is omitted rather than shown as a placeholder
+    private func stackedPair(_ block: ProseBlock) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !block.sideA.isEmpty {
+                stackedSide(block.sideA, marker: "A")
+            }
+            if !block.sideA.isEmpty, !block.sideB.isEmpty {
+                RuleLine()
+            }
+            if !block.sideB.isEmpty {
+                stackedSide(block.sideB, marker: "B")
+            }
+        }
+    }
+
+    /// one side of a stacked pair: the marker in a 20-point leading column,
+    /// hidden from voiceover because the block's label already names both sides
+    private func stackedSide(_ paragraphs: [ProseParagraph], marker: String) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text(marker)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.inkSecondary)
+                .frame(width: 20, alignment: .leading)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(paragraphs) { paragraph in
+                    paragraphText(paragraph)
+                }
+            }
+        }
     }
 
     /// action row on a tapped change (sdd §7.5): same three outputs as m2

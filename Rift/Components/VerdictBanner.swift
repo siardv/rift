@@ -89,11 +89,12 @@ enum VerdictText {
 }
 
 /// the result statement (sdd §7.1): one serif sentence at the principal size,
-/// unboxed and left aligned, with the compact mono notation beneath. long-press
-/// copies the canonical sentence, tap jumps to the first content change,
-/// tapping the notation line reveals the formatting-only sites dimmed in place
-/// (sdd §3.4, fr-10). voiceover hears the canonical sentences, never the
-/// compact notation
+/// unboxed and left aligned, with the compact notation beneath, set in sans
+/// secondary ink since m3.3a (the strings and the eye toggle are unchanged
+/// until m3.3b). long-press copies the canonical sentence, tap jumps to the
+/// first content change, tapping the notation line reveals the formatting-only
+/// sites in place (sdd §3.4, fr-10). voiceover hears the canonical sentences,
+/// never the compact notation
 struct VerdictBanner: View {
     let verdict: Verdict
     let revealActive: Bool
@@ -132,24 +133,19 @@ struct VerdictBanner: View {
                 Spacer(minLength: 0)
             }
             if let compact = VerdictText.compact(verdict) {
-                Button {
-                    if canReveal { onToggleReveal() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(compact)
-                            .font(Theme.data)
-                        if canReveal {
-                            Image(systemName: revealActive ? "eye.fill" : "eye")
-                                .font(.caption2)
-                        }
+                // the second line as sans text in secondary ink (m3.3a): the
+                // notation strings stay, the eye keeps its meaning, the frame
+                // is a genuine 44 points with no negative padding (nfr-5).
+                // without anything to reveal the line is plain text, so no
+                // disabled-control dimming touches its contrast
+                if canReveal {
+                    Button(action: onToggleReveal) {
+                        secondLine(compact)
                     }
-                    .foregroundStyle(canReveal ? AnyShapeStyle(Theme.ink) : AnyShapeStyle(.secondary))
-                    .frame(minHeight: 32)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                } else {
+                    secondLine(compact)
                 }
-                .buttonStyle(.plain)
-                .disabled(!canReveal)
-                .padding(.vertical, -4)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -163,6 +159,23 @@ struct VerdictBanner: View {
         .accessibilityAction(named: "Jump to first change") {
             if canJump { onJumpToFirstChange() }
         }
+    }
+
+    /// the notation line: `.subheadline` in secondary ink with the eye in ink
+    /// while the reveal is active
+    private func secondLine(_ compact: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(compact)
+                .font(.subheadline)
+                .foregroundStyle(Theme.inkSecondary)
+            if canReveal {
+                Image(systemName: revealActive ? "eye.fill" : "eye")
+                    .font(.caption)
+                    .foregroundStyle(revealActive ? Theme.ink : Theme.inkSecondary)
+            }
+        }
+        .frame(minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     /// canonical primary + secondary sentences (sdd §3.4), never the compact form
