@@ -1,73 +1,53 @@
 import SwiftUI
 import UIKit
 
-/// design tokens for the "quiet editorial instrument" register (sdd §7.1, m3
-/// refined by m3.1 and m3.2): a near-white paper workspace and the icon's
-/// charcoal ink; input fields as clean white surfaces with a crisp low-contrast
-/// edge; one-point rules and half-point hairlines only where regions are
-/// genuinely analytical; one low radius; no authored shadows; three strictly
-/// limited type roles (serif, sans, mono). the accessible change colors and
-/// their non-color markings are unchanged from m2 (nfr-5)
+/// the approved neutral native workspace: white and gray surfaces, charcoal
+/// actions, system interface typography and restrained analytical rules.
+/// semantic change colors and their non-color markings remain unchanged
 enum Theme {
-    // MARK: - identity colors (match the supplied icon exactly)
-
-    /// warm ivory #F5F1E7
-    private static var ivory: UIColor { UIColor(red: 0.961, green: 0.945, blue: 0.906, alpha: 1) }
-    /// deep charcoal #1F1E1C
-    private static var charcoal: UIColor { UIColor(red: 0.122, green: 0.118, blue: 0.110, alpha: 1) }
-
     // MARK: - grounds and ink
 
-    /// the workspace (m3.2: cleaner white): a near-white warm paper in light —
-    /// the icon's ivory kept only as a whisper of warmth — and the icon's
-    /// charcoal in dark
     static let paper: Color = dynamic(
-        light: UIColor(red: 0.980, green: 0.976, blue: 0.965, alpha: 1), // #FAF9F6
-        dark: charcoal)
+        light: UIColor(white: 245 / 255, alpha: 1),
+        dark: UIColor(white: 24 / 255, alpha: 1))
 
-    /// primary ink and structural rules: charcoal on paper, ivory on charcoal
-    static let ink: Color = dynamic(light: charcoal, dark: ivory)
+    static let ink: Color = Color(uiColor: inkUIColor)
 
-    /// the same ink for uikit-backed controls (the paste control's label)
     static var inkUIColor: UIColor {
         UIColor { traits in
-            traits.userInterfaceStyle == .dark ? Theme.ivory : Theme.charcoal
+            UIColor(white: traits.userInterfaceStyle == .dark ? 245 / 255 : 32 / 255, alpha: 1)
         }
     }
 
-    /// explicit secondary ink for pane words, placeholders, sources, counts,
-    /// the empty-result instruction and the subordinate Clear action: an opaque
-    /// warm grey rather than an opacity of the ink, so hierarchy never rests on
-    /// transparency and body-text contrast holds on both the canvas and the
-    /// field (light 5.4:1 / 5.7:1, dark 7.5:1 / 6.8:1)
     static let inkSecondary: Color = dynamic(
-        light: UIColor(red: 0.388, green: 0.384, blue: 0.365, alpha: 1), // #63625D
-        dark: UIColor(red: 0.694, green: 0.678, blue: 0.651, alpha: 1)) // #B1ADA6
+        light: UIColor(white: 102 / 255, alpha: 1),
+        dark: UIColor(white: 184 / 255, alpha: 1))
 
-    /// the input field: clean white on the near-white paper in light (1.03:1),
-    /// charcoal lifted toward ivory in dark (1.11:1); the edge, not the fill,
-    /// carries the boundary
     static let field: Color = Color(uiColor: fieldUIColor)
 
-    /// the same surface for uikit-backed controls: the paste control's
-    /// background, so the control merges with the field it sits in (a clear
-    /// background renders as black there)
     static var fieldUIColor: UIColor {
         UIColor { traits in
             traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.157, green: 0.149, blue: 0.141, alpha: 1) // #282624
-                : .white // #FFFFFF
+                ? UIColor(white: 37 / 255, alpha: 1)
+                : .white
         }
     }
 
-    /// the crisp one-point edge of a field, the action-row divider and the
-    /// Load sample outline (1.6:1 against the white field, 1.5:1 against the
-    /// paper in light). if the boundary is not immediately perceptible on the
-    /// device at ordinary and low brightness, this is the token to darken one
-    /// step — never a shadow or a stronger fill
     static let fieldEdge: Color = dynamic(
-        light: UIColor(red: 0.792, green: 0.780, blue: 0.745, alpha: 1), // #CAC7BE
-        dark: UIColor(red: 0.290, green: 0.282, blue: 0.271, alpha: 1)) // #4A4845
+        light: UIColor(white: 224 / 255, alpha: 1),
+        dark: UIColor(white: 65 / 255, alpha: 1))
+
+    static var actionUIColor: UIColor {
+        UIColor { traits in
+            UIColor(white: traits.userInterfaceStyle == .dark ? 245 / 255 : 37 / 255, alpha: 1)
+        }
+    }
+
+    static var actionLabelUIColor: UIColor {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark ? UIColor(white: 32 / 255, alpha: 1) : .white
+        }
+    }
 
     /// one-point rule where regions genuinely differ (result / evidence
     /// boundary, ladder convergence, navigator edge); never on a field
@@ -81,25 +61,19 @@ enum Theme {
     /// not a hierarchy device
     static let absentFill: Color = Color.primary.opacity(0.05)
 
-    /// neutral interaction tint: charcoal-led instead of system blue. dark mode
-    /// inverts to ivory so buttons and links read as ink
-    static let accent: Color = dynamic(light: charcoal, dark: ivory)
+    static let accent: Color = ink
 
-    /// switch tracks: charcoal in light; a mid warm grey in dark so the white
-    /// knob stays legible against the track (an ivory track would swallow it)
     static let switchTint: Color = dynamic(
-        light: charcoal,
-        dark: UIColor(red: 0.561, green: 0.541, blue: 0.502, alpha: 1))
+        light: UIColor(white: 37 / 255, alpha: 1),
+        dark: UIColor(white: 138 / 255, alpha: 1))
 
     /// formatting-only ink: dimmed to ~40 % with a dotted underline (sdd §7.1)
     static let formattingOpacity: Double = 0.4
 
     // MARK: - shape and metrics
 
-    /// the only custom radius in the app: fields, the decoded-as badge, the
-    /// paste control's corners and the Load sample outline; native controls
-    /// otherwise keep system shapes
-    static let fieldRadius: CGFloat = 4
+    static let fieldRadius: CGFloat = 8
+    static let sourceGroupRadius: CGFloat = 16
 
     /// horizontal inset of field content (heading, meta line, excerpt)
     static let fieldInset: CGFloat = 13
@@ -151,10 +125,8 @@ enum Theme {
     static let proseBaseSize: CGFloat = 17
     static let codeBaseSize: CGFloat = 13
 
-    /// serif role 1 of 2: the principal verdict sentence (role 2 is flowing
-    /// prose result text, set in ProseDiffView)
     static func verdict(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .serif)
+        .system(size: size, weight: .semibold)
     }
 
     /// mono eyebrow / structural label in the result header and sheets:

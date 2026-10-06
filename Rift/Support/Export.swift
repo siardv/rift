@@ -117,15 +117,16 @@ enum Export {
         let aBytes = Array(a.utf8)
         let bBytes = Array(b.utf8)
         var flat: [PatchEntry] = []
-        for hunk in document.hunks {
-            let lo = max(0, min(hunk.rangeA.lowerBound, aBytes.count))
-            let hi = max(lo, min(hunk.rangeA.upperBound, aBytes.count))
-            let blo = max(0, min(hunk.rangeB.lowerBound, bBytes.count))
-            let bhi = max(blo, min(hunk.rangeB.upperBound, bBytes.count))
-            let sliceA = aBytes[lo..<hi]
-            let sliceB = bBytes[blo..<bhi]
-            // byte-exact equality test; String == would blur nfc (m1 erratum)
-            if hunk.kind == .equal, sliceA.elementsEqual(sliceB) {
+        var groupStartA = 0
+        var groupStartB = 0
+
+        // report hunks can end inside a source line. join those fragments
+        // before emitting patch rows so a terminating newline is not a new line
+        func flush(through endA: Int, _ endB: Int) {
+            guard endA > groupStartA || endB > groupStartB else { return }
+            let sliceA = aBytes[groupStartA..<endA]
+            let sliceB = bBytes[groupStartB..<endB]
+            if sliceA.elementsEqual(sliceB) {
                 for line in splitLines(String(decoding: sliceA, as: UTF8.self)) {
                     flat.append(.context(line))
                 }
@@ -137,7 +138,33 @@ enum Export {
                     flat.append(.insert(line))
                 }
             }
+            groupStartA = endA
+            groupStartB = endB
         }
+
+        func isLineBoundary(_ offset: Int, in bytes: [UInt8]) -> Bool {
+            offset == 0 || offset == bytes.count || bytes[offset - 1] == 0x0A
+        }
+
+        for hunk in document.hunks {
+            let lo = max(0, min(hunk.rangeA.lowerBound, aBytes.count))
+            let hi = max(lo, min(hunk.rangeA.upperBound, aBytes.count))
+            let blo = max(0, min(hunk.rangeB.lowerBound, bBytes.count))
+            let bhi = max(blo, min(hunk.rangeB.upperBound, bBytes.count))
+            let sliceA = aBytes[lo..<hi]
+            let sliceB = bBytes[blo..<bhi]
+            // flush shared newlines within an equal run so unchanged context
+            // remains separate from a preceding partially changed source line
+            if sliceA.elementsEqual(sliceB) {
+                for (offset, byte) in sliceA.enumerated() where byte == 0x0A {
+                    flush(through: lo + offset + 1, blo + offset + 1)
+                }
+            }
+            if isLineBoundary(hi, in: aBytes), isLineBoundary(bhi, in: bBytes) {
+                flush(through: hi, bhi)
+            }
+        }
+        flush(through: aBytes.count, bBytes.count)
         let changeIndices = flat.indices.filter {
             if case .context = flat[$0] { return false }
             return true
@@ -164,8 +191,8 @@ enum Export {
         }
         let lastAIndex = flat.lastIndex(where: \.consumesA)
         let lastBIndex = flat.lastIndex(where: \.consumesB)
-        let aNoEOF = !a.isEmpty && !a.hasSuffix("\n")
-        let bNoEOF = !b.isEmpty && !b.hasSuffix("\n")
+        let aNoEOF = !aBytes.isEmpty && aBytes.last != 0x0A
+        let bNoEOF = !bBytes.isEmpty && bBytes.last != 0x0A
         var out = "--- a\n+++ b\n"
         for (lo, hi) in windows {
             let aCount = aBefore[hi + 1] - aBefore[lo]
@@ -187,8 +214,9 @@ enum Export {
 
     private static func splitLines(_ s: String) -> [String] {
         guard !s.isEmpty else { return [] }
-        var lines = s.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        if s.hasSuffix("\n") {
+        var lines = s.utf8.split(separator: 0x0A, omittingEmptySubsequences: false)
+            .map { String(decoding: $0, as: UTF8.self) }
+        if s.utf8.last == 0x0A {
             lines.removeLast()
         }
         return lines
@@ -203,7 +231,8 @@ struct PatchExport: Transferable, Sendable {
     let document: DiffDocument
 
     static var transferRepresentation: some TransferRepresentation {
-        DataRepresentation(exportedContentType: .plainText) { item in
+        // the patch type keeps Files from appending the plain-text .txt suffix
+        DataRepresentation(exportedContentType: UTType(filenameExtension: "patch", conformingTo: .plainText)!) { item in
             Data(Export.unifiedPatch(a: item.a, b: item.b, document: item.document).utf8)
         }
         .suggestedFileName("rift-comparison.patch")

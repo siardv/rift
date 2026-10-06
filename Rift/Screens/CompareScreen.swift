@@ -2,20 +2,23 @@ import RiftEngine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// the single main screen (sdd §7.2): input fields, result header (verdict,
-/// notation line, the content / comparison / layout controls, rule), result
-/// view, and a rectangular change navigator in the bottom safe-area inset;
-/// inspector and settings live in sheets. the screen renders CompareSession
-/// state and never computes (sdd §1.5, §5.3). the result's own view state
-/// (layout choice, change selection) is pure and lives in
-/// ResultPresentation.swift (m3.3a)
+/// source acquisition and verdict-first reading share one session. switching
+/// workspaces never computes, clears sources or resets result view choices
 struct CompareScreen: View {
+    private enum Workspace: String, CaseIterable {
+        case sources = "Sources"
+        case comparison = "Comparison"
+    }
+
+    @State private var workspace: Workspace = .sources
+    @State private var expandedPane: PaneID? = .a
+    @FocusState private var focusedPane: PaneID?
     @State private var session = CompareSession()
+    @State private var sourceViewportSize: CGSize = .zero
     private var settings = ViewerSettings()
 
-    @Environment(\.horizontalSizeClass) private var hSizeClass
-    @Environment(\.verticalSizeClass) private var vSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ScaledMetric(relativeTo: .body) private var proseUnit: CGFloat = Theme.proseBaseSize
 
     @State private var isInspectorPresented = false
@@ -43,10 +46,6 @@ struct CompareScreen: View {
 
     // MARK: - layout defaults (sdd §7.2, fr-7)
 
-    private var isWide: Bool {
-        hSizeClass == .regular || vSizeClass == .compact
-    }
-
     /// the effective type size over its base, times the viewer font scale
     private var typeScale: Double {
         Double(proseUnit / Theme.proseBaseSize) * settings.fontScale
@@ -72,46 +71,61 @@ struct CompareScreen: View {
         return true
     }
 
+    private var scrollsSourceChrome: Bool {
+        dynamicTypeSize.isAccessibilitySize || verticalSizeClass == .compact
+    }
+
+    private var hasCompactEditorFocus: Bool {
+        workspace == .sources && focusedPane != nil && verticalSizeClass == .compact
+    }
+
     var body: some View {
         NavigationStack {
-            ScrollViewReader { proxy in
-                // one vertical scroll for fields, result header and result
-                // (m3.2): the fields are never squeezed by the result view, and
-                // a long result scrolls the fields away like a document. the
-                // change navigator stays in the bottom inset
-                ScrollView {
-                    VStack(spacing: 0) {
-                        header(proxy: proxy)
-                        resultArea
-                    }
-                    .frame(maxWidth: .infinity)
-                    // the scroll content's width is known from the first
-                    // layout pass, before any result exists, so the layout
-                    // never flickers from one geometry to another (m3.3a)
-                    .onGeometryChange(for: CGFloat.self) { geometry in
-                        geometry.size.width
-                    } action: { width in
-                        evidenceWidth = max(0, width - 2 * Self.evidencePadding)
+            VStack(spacing: 0) {
+                if workspace == .comparison || !scrollsSourceChrome {
+                    workspacePicker
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                }
+
+                // both scroll surfaces stay mounted, preserving editor and
+                // result expansion state while the inactive surface is hidden
+                ZStack {
+                    sourcesArea
+                        .zIndex(workspace == .sources ? 1 : 0)
+                        .frame(height: workspace == .sources ? nil : 0)
+                        .clipped()
+                        .opacity(workspace == .sources ? 1 : 0)
+                        .allowsHitTesting(workspace == .sources)
+                        .accessibilityHidden(workspace != .sources)
+                    comparisonArea
+                        .zIndex(workspace == .comparison ? 1 : 0)
+                        .frame(height: workspace == .comparison ? nil : 0)
+                        .clipped()
+                        .opacity(workspace == .comparison ? 1 : 0)
+                        .allowsHitTesting(workspace == .comparison)
+                        .accessibilityHidden(workspace != .comparison)
+                }
+            }
+            .background(Theme.paper.ignoresSafeArea())
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if workspace == .sources && !scrollsSourceChrome && focusedPane == nil {
+                    sourceFooter
+                }
+            }
+            .toolbar { toolbarContent }
+            .toolbarBackground(Theme.paper, for: .navigationBar)
+            .toolbar {
+                if !hasCompactEditorFocus {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { focusedPane = nil }
                     }
                 }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if selection.isVisible, session.report != nil {
-                        ChangeNavigator(
-                            selection: selection,
-                            onPrevious: { navigate(by: -1, proxy: proxy) },
-                            onNext: { navigate(by: 1, proxy: proxy) })
-                    }
-                }
-                .background(Theme.paper.ignoresSafeArea())
-                .navigationTitle("Rift")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { toolbarContent }
-                .toolbarBackground(Theme.paper, for: .navigationBar)
             }
         }
-        // one ink for the whole workspace: text defaults to charcoal (ivory in
-        // dark) and `.secondary` derives from it; semantic diff colors and the
-        // accent are set explicitly where they apply
         .foregroundStyle(Theme.ink)
         .tint(Theme.accent)
         .preferredColorScheme(settings.appearance.colorScheme)
@@ -142,6 +156,9 @@ struct CompareScreen: View {
         } message: { notice in
             Text(notice.message)
         }
+        .onChange(of: workspace) {
+            if workspace == .comparison { focusedPane = nil }
+        }
         .onChange(of: session.publishCount) {
             // a recomputation keeps the selection, clamped to the new total.
             // one-sided states publish too, with a nil report, and must not
@@ -164,39 +181,251 @@ struct CompareScreen: View {
         session.revealFormatting = false
     }
 
-    // MARK: - header: fields, result statement, controls (sdd §7.3)
+    // MARK: - source acquisition
 
-    @ViewBuilder
-    private func header(proxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            panes
-                .accessibilitySortPriority(1)
-            if session.showsProgress {
-                ThinProgressBar()
-            }
-            if let report = session.report {
-                resultHeader(report, proxy: proxy)
+    private var workspacePicker: some View {
+        Picker("Workspace", selection: $workspace) {
+            ForEach(Workspace.allCases, id: \.self) { item in
+                Text(item.rawValue).tag(item)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .pickerStyle(.segmented)
     }
 
-    @ViewBuilder
-    private var panes: some View {
-        let fieldA = PaneCard(pane: .a, session: session, onRequestImport: requestImport)
-        let fieldB = PaneCard(pane: .b, session: session, onRequestImport: requestImport)
-        if isWide {
-            HStack(alignment: .top, spacing: 16) {
-                fieldA
-                fieldB
+    private var sourcesArea: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // scroll navigation and options with the content when fixed
+                    // chrome would leave too little space for the active editor
+                    if scrollsSourceChrome {
+                        workspacePicker
+                    }
+                    panes
+                    Text(session.isResultCurrent ? "Comparison ready. Your texts stay editable." :
+                            (hasBothInputs ? "Updating comparison…" : "Add both texts. The comparison updates automatically."))
+                        .font(.footnote)
+                        .foregroundStyle(Theme.inkSecondary)
+                    if hasBothInputs {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Button {
+                                workspace = .comparison
+                            } label: {
+                                HStack {
+                                    Text("View comparison")
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "arrow.right")
+                                }
+                                .font(.body.weight(.medium))
+                                .frame(maxWidth: .infinity, minHeight: 28)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .buttonBorderShape(.roundedRectangle(radius: 12))
+                            .controlSize(.regular)
+                            .tint(Color(uiColor: Theme.actionUIColor))
+                            .foregroundStyle(Color(uiColor: Theme.actionLabelUIColor))
+                            .disabled(!hasBothInputs)
+                        }
+                    } else if !session.hasAnyInput {
+                        TextAction(title: "Load sample", font: .subheadline, color: Theme.inkSecondary,
+                                   horizontalPadding: 0, alignment: .leading) { session.loadSample() }
+                    }
+                    if scrollsSourceChrome && focusedPane == nil {
+                        sourceOptions
+                            .padding(.top, 8)
+                            .overlay(alignment: .top) {
+                                Rectangle().fill(Theme.fieldEdge).frame(height: 0.5)
+                            }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 20)
             }
-        } else {
-            VStack(spacing: 12) {
-                fieldA
-                fieldB
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: focusedPane) {
+                if let pane = focusedPane { proxy.scrollTo(pane, anchor: .top) }
+            }
+            .onGeometryChange(for: CGSize.self) { geometry in
+                geometry.size
+            } action: { size in
+                let previousSize = sourceViewportSize
+                sourceViewportSize = size
+                // leave an expanding viewport alone during keyboard dismissal
+                if workspace == .sources, let pane = focusedPane,
+                   size.height < previousSize.height || size.width != previousSize.width {
+                    proxy.scrollTo(pane, anchor: .top)
+                }
+            }
+            .onChange(of: dynamicTypeSize) {
+                if workspace == .sources, let pane = focusedPane {
+                    proxy.scrollTo(pane, anchor: .top)
+                }
             }
         }
+    }
+
+    private var hasBothInputs: Bool {
+        !session.textA.isEmpty && !session.textB.isEmpty
+    }
+
+    private var panes: some View {
+        VStack(spacing: 0) {
+            PaneCard(pane: .a, session: session, onRequestImport: requestImport,
+                     focus: $focusedPane, isExpanded: expandedPane == .a,
+                     editingViewportHeight: sourceViewportSize.height,
+                     onSelect: { selectSource(.a) })
+            Rectangle()
+                .fill(Theme.fieldEdge)
+                .frame(height: 0.5)
+                .padding(.horizontal, 16)
+                .accessibilityHidden(true)
+            PaneCard(pane: .b, session: session, onRequestImport: requestImport,
+                     focus: $focusedPane, isExpanded: expandedPane == .b,
+                     editingViewportHeight: sourceViewportSize.height,
+                     onSelect: { selectSource(.b) })
+        }
+        .background(Theme.field)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.sourceGroupRadius, style: .continuous))
+    }
+
+    private func selectSource(_ pane: PaneID) {
+        focusedPane = nil
+        expandedPane = expandedPane == pane ? nil : pane
+    }
+
+    private var sourceFooter: some View {
+        sourceOptions
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .background(Theme.paper)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.fieldEdge).frame(height: 0.5) }
+    }
+
+    private var sourceOptions: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+            : AnyLayout(HStackLayout(spacing: 16))
+        return layout {
+            Button {
+                isInspectorPresented = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text("\(session.modeChoice.label) comparison")
+                    Image(systemName: "chevron.down").font(.caption)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Comparison: \(session.modeChoice.label)")
+            .accessibilityHint("Opens comparison options")
+            if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
+            Button {
+                isSettingsPresented = true
+            } label: {
+                Label("View", systemImage: "slider.horizontal.3")
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Viewing options")
+        }
+        .font(.subheadline)
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - comparison reading
+
+    private var comparisonArea: some View {
+        ScrollViewReader { proxy in
+            ZStack(alignment: .topLeading) {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if let report = session.report {
+                            resultHeader(report, proxy: proxy)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 8)
+                        }
+                        resultArea
+                    }
+                    .frame(maxWidth: .infinity)
+                    .opacity(session.isResultCurrent ? 1 : 0)
+                    .allowsHitTesting(session.isResultCurrent)
+                    .accessibilityHidden(!session.isResultCurrent)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.size.width
+                    } action: { width in
+                        evidenceWidth = max(0, width - 2 * Self.evidencePadding)
+                    }
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if selection.isVisible, session.isResultCurrent {
+                        ChangeNavigator(
+                            selection: selection,
+                            onPrevious: { navigate(by: -1, proxy: proxy) },
+                            onNext: { navigate(by: 1, proxy: proxy) })
+                    }
+                }
+                // pending feedback belongs to the viewport, so a retained
+                // deep evidence scroll position cannot hide the status
+                if !session.isResultCurrent { pendingComparison }
+            }
+        }
+    }
+
+    private var pendingComparison: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(hasBothInputs ? "Updating comparison…" : "Add both texts to compare.")
+                .font(.headline)
+            if session.showsProgress { ThinProgressBar() }
+            TextAction(title: "Edit sources", font: .body, horizontalPadding: 0,
+                       alignment: .leading) { workspace = .sources }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var sourceIdentity: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    sourceDirection
+                    editSourcesAction
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    sourceDirection
+                    Spacer(minLength: 8)
+                    editSourcesAction
+                }
+            }
+            ForEach([PaneID.a, .b], id: \.self) { pane in
+                let meta = session.meta(for: pane)
+                if let source = meta.sourceLabel {
+                    Text("\(pane == .a ? "Original" : "Revision"): \(source)")
+                        .font(.caption)
+                        .foregroundStyle(Theme.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let decoded = meta.decodedAs {
+                    Label("\(pane == .a ? "Original" : "Revision") decoded as \(decoded)",
+                          systemImage: "info.circle")
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var sourceDirection: some View {
+        Text("Original → Revision")
+            .font(.subheadline.weight(.medium))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var editSourcesAction: some View {
+        TextAction(title: "Edit sources", font: .subheadline, horizontalPadding: 0,
+                   alignment: .leading) { workspace = .sources }
     }
 
     /// the verdict, its notation line, the three controls, then the structural
@@ -210,12 +439,14 @@ struct CompareScreen: View {
                 onJumpToFirstChange: { jump(to: 1, proxy: proxy) },
                 onToggleReveal: { session.revealFormatting.toggle() })
                 .accessibilitySortPriority(3)
+            sourceIdentity
+                .accessibilitySortPriority(2.7)
             metaLine(report)
                 .accessibilitySortPriority(2.5)
             if report.document.isDegraded, let reason = report.document.degradationReason {
                 degradationNotice(reason)
             }
-            RuleLine(weight: .rule)
+            RuleLine()
         }
     }
 
@@ -296,10 +527,15 @@ struct CompareScreen: View {
     /// another screen), laid out in a genuine 44-point frame (nfr-5)
     private func headerControl(prefix: String, value: String, glyph: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(prefix)
-                .foregroundStyle(Theme.inkSecondary)
-            Text(value)
-                .foregroundStyle(Theme.ink)
+            if dynamicTypeSize.isAccessibilitySize {
+                Text("\(prefix) \(value)")
+                    .foregroundStyle(Theme.ink)
+            } else {
+                Text(prefix)
+                    .foregroundStyle(Theme.inkSecondary)
+                Text(value)
+                    .foregroundStyle(Theme.ink)
+            }
             Image(systemName: glyph)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Theme.inkSecondary)
@@ -332,7 +568,7 @@ struct CompareScreen: View {
     @ViewBuilder
     private var resultArea: some View {
         if !session.hasAnyInput {
-            emptyState
+            EmptyView()
         } else if let report = session.report, let viewModel = session.viewModel {
             if case .identical = report.verdict {
                 // the statement is the result; no empty diff view (sdd §7.3)
@@ -371,80 +607,76 @@ struct CompareScreen: View {
         }
     }
 
-    /// the empty result area (sdd §7.3, fr-13): one instruction that names the
-    /// area and the single outlined `Load sample`, left aligned at the field
-    /// edge; nothing else claims the space — no container, rule or slogan
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Results appear here once both sides have text.")
-                .font(.subheadline)
-                .foregroundStyle(Theme.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            OutlinedTextAction(title: "Load sample") { session.loadSample() }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.top, 20)
-    }
-
     // MARK: - toolbar (sdd §7.2): global actions only. swap exists only once
-    // there is something to swap; inspector and more are always present
+    // there is something to swap; comparison options remain in the footer,
+    // result header and More menu
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            if session.hasAnyInput {
-                Button {
-                    session.swapSides()
-                } label: {
-                    Image(systemName: "arrow.left.arrow.right")
-                }
-                .accessibilityLabel("Swap sides")
+        if hasCompactEditorFocus {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { focusedPane = nil }
             }
-
-            Button {
-                isInspectorPresented = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
+        } else {
+            if #available(iOS 26.0, *) {
+                ToolbarItem(placement: .topBarLeading) { BrandMark() }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarLeading) { BrandMark() }
             }
-            .accessibilityLabel("Inspector")
-
-            Menu {
-                if let report = session.report {
-                    ShareLink(item: Export.summary(report: report,
-                                                   a: session.textA, b: session.textB,
-                                                   countsA: session.countsA,
-                                                   countsB: session.countsB,
-                                                   modeChoice: session.modeChoice)) {
-                        Label("Share summary", systemImage: "doc.plaintext")
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if session.hasAnyInput {
+                    Button {
+                        session.swapSides()
+                    } label: {
+                        Image(systemName: "arrow.left.arrow.right")
                     }
-                    ShareLink(item: PatchExport(a: session.textA, b: session.textB,
-                                                document: report.document),
-                              preview: SharePreview("rift-comparison.patch")) {
-                        Label("Export .patch", systemImage: "doc.badge.gearshape")
+                    .accessibilityLabel("Swap sides")
+                }
+
+                Menu {
+                    if session.isResultCurrent, let report = session.report {
+                        ShareLink(item: Export.summary(report: report,
+                                                       a: session.textA, b: session.textB,
+                                                       countsA: session.countsA,
+                                                       countsB: session.countsB,
+                                                       modeChoice: session.modeChoice)) {
+                            Label("Share summary", systemImage: "doc.plaintext")
+                        }
+                        ShareLink(item: PatchExport(a: session.textA, b: session.textB,
+                                                    document: report.document),
+                                  preview: SharePreview("rift-comparison.patch")) {
+                            Label("Export .patch", systemImage: "doc.badge.gearshape")
+                        }
+                        Divider()
                     }
-                    Divider()
-                }
-                Button {
-                    isSettingsPresented = true
+                    Button {
+                        isInspectorPresented = true
+                    } label: {
+                        Label("Comparison options", systemImage: "slider.horizontal.3")
+                    }
+                    Button {
+                        isSettingsPresented = true
+                    } label: {
+                        Label("Viewing options", systemImage: "textformat.size")
+                    }
+                    Button {
+                        isAboutPresented = true
+                    } label: {
+                        Label("About Rift", systemImage: "info.circle")
+                    }
                 } label: {
-                    Label("Viewing options", systemImage: "textformat.size")
+                    Image(systemName: "ellipsis.circle")
                 }
-                Button {
-                    isAboutPresented = true
-                } label: {
-                    Label("About Rift", systemImage: "info.circle")
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
+                .accessibilityLabel("More")
             }
-            .accessibilityLabel("More")
         }
     }
 
     // MARK: - navigation (fr-9)
 
     private func requestImport(_ pane: PaneID) {
+        focusedPane = nil
         importTarget = pane
         isImporterPresented = true
     }
@@ -480,6 +712,7 @@ struct CompareScreen: View {
 /// functional animation in the app
 struct ThinProgressBar: View {
     @State private var slid = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
@@ -490,7 +723,11 @@ struct ThinProgressBar: View {
         }
         .frame(height: 2)
         .clipped()
-        .onAppear {
+        .task(id: reduceMotion) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { slid = false }
+            guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                 slid = true
             }
@@ -507,20 +744,25 @@ struct ProfileInfoView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(detected.explanation)
-                .font(.footnote)
-                .fixedSize(horizontal: false, vertical: true)
-            if detected.isAutomatic {
-                Text("CONFIDENCE \(Int((detected.confidence * 100).rounded())) %")
-                    .font(Theme.data)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Confidence \(Int((detected.confidence * 100).rounded())) percent")
-            }
-            if detected.isIndentationSensitive {
-                Text("Indentation looks meaning-bearing, so layout rules keep it significant.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if session.isResultCurrent {
+                Text(detected.explanation)
+                    .font(.footnote)
                     .fixedSize(horizontal: false, vertical: true)
+                if detected.isAutomatic {
+                    Text("CONFIDENCE \(Int((detected.confidence * 100).rounded())) %")
+                        .font(Theme.data)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Confidence \(Int((detected.confidence * 100).rounded())) percent")
+                }
+                if detected.isIndentationSensitive {
+                    Text("Indentation looks meaning-bearing, so layout rules keep it significant.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("Updating comparison…")
+                    .font(.footnote)
             }
             RuleLine()
             Picker("Profile", selection: $session.profileOverride) {

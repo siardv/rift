@@ -194,6 +194,9 @@ final class CompareSession {
 
     private(set) var report: DiffReport?
     private(set) var viewModel: DiffViewModel?
+    /// false immediately on an edit or option change, including the debounce
+    /// window; only a publication for the current generation makes it true
+    private(set) var isResultCurrent = false
     private(set) var isComparing = false
     /// true once a run exceeds the 150 ms progress threshold (sdd §7.3)
     private(set) var showsProgress = false
@@ -260,6 +263,7 @@ final class CompareSession {
     // MARK: - debounced auto-compare (fr-2, sdd §5.4)
 
     private func inputsChanged() {
+        isResultCurrent = false
         generation &+= 1
         let gen = generation
         flag?.cancel()
@@ -310,6 +314,7 @@ final class CompareSession {
         let hadContentChanges = (report?.verdict).map(Self.contentChangeCount).map { $0 > 0 } ?? false
         report = outcome.report
         viewModel = outcome.viewModel
+        isResultCurrent = outcome.report != nil
         isComparing = false
         showsProgress = false
         publishCount &+= 1
@@ -434,6 +439,7 @@ final class CompareSession {
     /// every text change passes here first (fr-1): the ledger learns about a
     /// refill before the comparison is rescheduled
     private func textChanged(_ text: String, in pane: PaneID) {
+        if pane == .a { countsA = nil } else { countsB = nil }
         let hadPending = ledger.pendingPane != nil
         ledger.noteText(text, in: pane)
         if hadPending, ledger.pendingPane == nil {

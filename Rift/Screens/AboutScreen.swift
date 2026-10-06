@@ -110,7 +110,7 @@ struct AppIconView: View {
     /// CFBundleIcons → CFBundlePrimaryIcon → last (largest) CFBundleIconFiles
     /// entry, the names the asset compiler writes into the generated info.plist.
     /// nil in previews and unit tests, which have no compiled icon
-    private static func bundledIcon() -> UIImage? {
+    static func bundledIcon() -> UIImage? {
         let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any]
         let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
         let files = primary?["CFBundleIconFiles"] as? [String]

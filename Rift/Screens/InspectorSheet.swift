@@ -16,10 +16,23 @@ struct InspectorSheet: View {
                 if session.modeChoice == .custom {
                     ruleSections
                 }
-                if let report = session.report {
+                if session.isResultCurrent, let report = session.report {
                     profileSection(report)
                     ladderSection(report)
                     sitesSection
+                } else if !session.textA.isEmpty && !session.textB.isEmpty {
+                    Section("Profile") {
+                        Picker("Override", selection: $session.profileOverride) {
+                            Text("Automatic").tag(Profile?.none)
+                            ForEach(Profile.allCases, id: \.self) { profile in
+                                Text(profile.rawValue.capitalized).tag(Profile?.some(profile))
+                            }
+                        }
+                    }
+                    Section {
+                        Text("Updating comparison…")
+                            .foregroundStyle(Theme.inkSecondary)
+                    }
                 }
             }
             .navigationTitle("Inspector")

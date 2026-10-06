@@ -88,13 +88,8 @@ enum VerdictText {
     }
 }
 
-/// the result statement (sdd §7.1): one serif sentence at the principal size,
-/// unboxed and left aligned, with the compact notation beneath, set in sans
-/// secondary ink since m3.3a (the strings and the eye toggle are unchanged
-/// until m3.3b). long-press copies the canonical sentence, tap jumps to the
-/// first content change, tapping the notation line reveals the formatting-only
-/// sites in place (sdd §3.4, fr-10). voiceover hears the canonical sentences,
-/// never the compact notation
+/// a modest system-font verdict with visible Show / Hide formatting control.
+/// canonical spoken, copied and exported wording remains unchanged
 struct VerdictBanner: View {
     let verdict: Verdict
     let revealActive: Bool
@@ -102,7 +97,8 @@ struct VerdictBanner: View {
     let onToggleReveal: () -> Void
 
     @State private var showsCopied = false
-    @ScaledMetric(relativeTo: .title) private var verdictSize: CGFloat = 28
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title) private var verdictSize: CGFloat = 26
 
     private var canJump: Bool {
         VerdictText.contentChangeCount(verdict) > 0
@@ -133,11 +129,8 @@ struct VerdictBanner: View {
                 Spacer(minLength: 0)
             }
             if let compact = VerdictText.compact(verdict) {
-                // the second line as sans text in secondary ink (m3.3a): the
-                // notation strings stay, the eye keeps its meaning, the frame
-                // is a genuine 44 points with no negative padding (nfr-5).
-                // without anything to reveal the line is plain text, so no
-                // disabled-control dimming touches its contrast
+                // the notation retains its wording; Show / Hide labels the
+                // existing reveal action with a genuine 44-point target
                 if canReveal {
                     Button(action: onToggleReveal) {
                         secondLine(compact)
@@ -161,17 +154,19 @@ struct VerdictBanner: View {
         }
     }
 
-    /// the notation line: `.subheadline` in secondary ink with the eye in ink
-    /// while the reveal is active
+    /// notation and reveal label stack at accessibility text sizes
     private func secondLine(_ compact: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+        return layout {
             Text(compact)
                 .font(.subheadline)
                 .foregroundStyle(Theme.inkSecondary)
             if canReveal {
-                Image(systemName: revealActive ? "eye.fill" : "eye")
-                    .font(.caption)
-                    .foregroundStyle(revealActive ? Theme.ink : Theme.inkSecondary)
+                Text(revealActive ? "Hide" : "Show")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.ink)
             }
         }
         .frame(minHeight: 44, alignment: .leading)

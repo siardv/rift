@@ -52,6 +52,18 @@ targets:
       # the pure result-presentation state (layout choice, column rule, change
       # selection) is shared the same way (m3.3a)
       - path: Rift/State/ResultPresentation.swift
+      # session scheduling and export freshness are tested through real app
+      # sources in this hostless bundle, including their rendering dependencies
+      - path: Rift/State/CompareSession.swift
+      - path: Rift/Components/DiffRow.swift
+      - path: Rift/Support/Theme.swift
+      - path: Rift/Support/Haptics.swift
+      - path: Rift/Support/SampleContent.swift
+      - path: Rift/Support/Export.swift
+      - path: Rift/Components/VerdictBanner.swift
+      - path: Rift/Components/LadderView.swift
+      - path: Rift/Components/Furniture.swift
+      - path: Rift/Components/PasteControl.swift
     dependencies:
       - package: RiftEngine
     settings:
