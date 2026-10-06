@@ -4,7 +4,7 @@
 
 Rift compares two texts and answers, verdict-first, whether substantive content changed — automatically setting aside presentational differences (line endings, trailing spaces, space runs, blank-line runs, hard-wrap reflow, indentation) without any manual ignore-toggles. Everything set aside is counted and revealable, never silently discarded.
 
-Free, open source, fully offline: no accounts, no analytics, no network access at all. iPhone + iPad, iOS 17+. It ships on the App Store as *Rift — Text & Code Diff*; on your device it is simply **Rift**.
+Free and open source, with offline comparison, no accounts, and no analytics. iPhone + iPad, iOS 17+. The planned App Store listing is *Rift — Text & Code Diff*; on your device it is simply **Rift**.
 
 ## The strictness ladder
 
@@ -22,7 +22,7 @@ Every token carries provenance back to the original bytes, so each ignored diffe
 
 ## Status
 
-**M1 — engine.** `RiftEngine.compare(_:_:options:)` now runs the full pipeline: the strictness ladder with provenance, content-profile auto-detection (with the conservative indentation-sensitivity guard for Python/YAML-like code), Myers alignment with pairing and refinement, paragraph split/merge labeling, and formatting accounting — verified by a 26-case golden corpus plus property tests on macOS and Linux. The UI (M2) is next; not yet on the App Store.
+**0.1.0 candidate.** The native iPhone and iPad app includes focused source editing, automatic comparison, the strictness ladder with provenance, and summary and patch exports. The engine and app tests pass locally and in CI. Physical device acceptance and App Store submission remain pending; Rift is not yet available on the App Store.
 
 ## Building
 

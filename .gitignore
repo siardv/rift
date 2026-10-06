@@ -19,6 +19,7 @@
 # native app sources
 !/Rift/
 !/Rift/*.swift
+!/Rift/PrivacyInfo.xcprivacy
 !/Rift/Components/
 !/Rift/Components/*.swift
 !/Rift/Screens/

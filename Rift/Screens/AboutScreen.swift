@@ -34,7 +34,7 @@ struct AboutScreen: View {
 
                     RuleLine(weight: .rule)
 
-                    Text("Local-only text comparison. No accounts, analytics, or network access.")
+                    Text("Text comparison happens on your device. No accounts, analytics, or tracking.")
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 16)
@@ -44,6 +44,12 @@ struct AboutScreen: View {
                     factRow("SOURCE") {
                         Link("github.com/siardv/rift",
                              destination: URL(string: "https://github.com/siardv/rift")!)
+                            .font(.subheadline)
+                    }
+                    RuleLine()
+                    factRow("PRIVACY") {
+                        Link("Privacy policy",
+                             destination: URL(string: "https://github.com/siardv/rift/blob/main/docs/privacy.md")!)
                             .font(.subheadline)
                     }
                     RuleLine()

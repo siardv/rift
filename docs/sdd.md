@@ -408,9 +408,9 @@ The icon is the supplied IVORY artwork: an opaque, full-bleed 1024 × 1024 RGB P
 
 ## 8. Data, persistence, privacy
 
-v1.0 persists only viewer settings and options (`@AppStorage` / `UserDefaults`); inputs are held in memory and restored via standard scene state restoration where the system provides it. No files are written except user-initiated exports through the share sheet. There is no networking code path at all — the strongest privacy statement is structural absence, and it also makes App Review trivial. When history arrives (FR-15) it will be opt-in, local, and stored as plain files in the app container.
+The 0.1.0 candidate persists only viewer settings (`@AppStorage` / `UserDefaults`); inputs and comparison results are held in memory. There is no saved comparison history or developer-operated network service. User-initiated exports use the native share sheet and can leave the device through a receiving app or cloud file provider. About links open the user's browser. When history arrives (FR-15) it will be opt-in, local, and stored as plain files in the app container.
 
-App Privacy questionnaire: **Data Not Collected** across the board. A one-page privacy policy (App Store requires a URL even for no-data apps) lives at `docs/privacy.md`, published via GitHub Pages.
+The intended App Privacy declaration is **Data Not Collected**. `Rift/PrivacyInfo.xcprivacy` declares no collection or tracking and the required UserDefaults reason `CA92.1`, restricted to the app's own preferences. The policy source is `docs/privacy.md`; About links to `https://github.com/siardv/rift/blob/main/docs/privacy.md`. The corrected 2026-10-06 policy must be published before submission; GitHub Pages hosting has not been verified.
 
 ## 9. Error handling and edge cases
 
@@ -448,10 +448,12 @@ MIT `LICENSE` (decided; permissive and App-Store-safe — copyleft licenses have
 
 ## 12. App Store submission plan
 
+**Preparation note (2026-10-06).** The user requested App Store submission. Local preparation adds the privacy manifest, About policy link and accurate export/privacy disclosure, plus the non-exempt-encryption flag in the authoritative `project.yml`. Version remains 0.1.0/build 1. The unsigned Release archive builds and contains the manifest and Boolean encryption flag; all 36 app and 26 engine tests pass. App Store Connect record `6819859170` exists in Prepare for Submission with version 0.1.0, listing copy, categories, manual release and a calculated 4+ age rating saved. Distribution signing is blocked because Xcode cannot retrieve its account's development team; contact/legal declarations and publication of the corrected policy remain outstanding. Screenshots and account progress are recorded in the dated submission handoff. The reference plan below is not evidence of completion. Physical device acceptance and the recorded editor/accessibility observations remain pending. No new visual milestone is started.
+
 | Item | Plan |
 |---|---|
-| Bundle ID | reverse-DNS you control, e.g. `io.github.siardv.rift` (pattern in common use for GitHub-hosted apps) — decide once, it is permanent |
-| App name on the store | **"Rift"** alone is already taken by an existing app, so the listing name needs a qualifier — e.g. `Rift — Text & Code Diff` (30-char limit) with subtitle `See what actually changed`; the icon label on device stays **Rift** (`CFBundleDisplayName`) |
+| Bundle ID | `io.github.siardv.rift`, registered to the user's existing Apple developer team on 2026-10-06 |
+| App name on the store | `Rift — Text & Code Diff`, created in App Store Connect on 2026-10-06, with subtitle `See what actually changed`; the icon label on device stays **Rift** (`CFBundleDisplayName`) |
 | Category | Primary: Developer Tools; Secondary: Productivity |
 | Price | Free, no IAP, no ads |
 | Age rating | 4+ |
